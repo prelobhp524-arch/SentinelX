@@ -3,7 +3,8 @@ from fastapi import APIRouter, HTTPException
 from app.services.packet_capture import (
     start_capture,
     stop_capture,
-    get_capture_status
+    get_capture_status,
+    get_available_interfaces
 )
 
 
@@ -14,10 +15,18 @@ router = APIRouter(
 
 
 @router.post("/start")
-def start_packet_capture():
+def start_packet_capture(payload: dict | None = None):
+
+    interface = payload.get("interface") if payload else None
 
     try:
-        return start_capture()
+        return start_capture(interface)
+
+    except ValueError as error:
+        raise HTTPException(
+            status_code=400,
+            detail=str(error)
+        )
 
     except Exception as error:
         raise HTTPException(
@@ -43,3 +52,11 @@ def stop_packet_capture():
 def packet_capture_status():
 
     return get_capture_status()
+
+
+@router.get("/interfaces")
+def available_interfaces():
+
+    return {
+        "interfaces": get_available_interfaces()
+    }

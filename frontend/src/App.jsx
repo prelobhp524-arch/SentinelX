@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import api from './services/api'
 
 import {
@@ -62,6 +62,11 @@ function App() {
   const [captureLoading, setCaptureLoading] = useState(false)
   const [captureError, setCaptureError] = useState('')
 
+  const [interfaces, setInterfaces] = useState([])
+  const [selectedInterface, setSelectedInterface] = useState('')
+  const [interfacesLoading, setInterfacesLoading] = useState(false)
+  const [interfacesError, setInterfacesError] = useState('')
+
   const [loading, setLoading] = useState(true)
   const [apiError, setApiError] = useState('')
   const [updatingAlertId, setUpdatingAlertId] = useState(null)
@@ -74,16 +79,51 @@ function App() {
   const [trafficProtocolFilter, setTrafficProtocolFilter] = useState('ALL')
   const [statusFilter, setStatusFilter] = useState('ALL')
     // Fetch packet capture status
-  const fetchCaptureStatus = async () => {
+  const fetchCaptureStatus = useCallback(async () => {
     try {
       const response = await api.get('/api/capture/status')
       setCaptureStatus(response.data)
       setCaptureError('')
+      return response.data
     } catch (error) {
       console.error('Capture status error:', error)
       setCaptureError('Unable to fetch packet capture status')
     }
-  }
+  }, [])
+
+  // Fetch available network interfaces
+  const fetchInterfaces = useCallback(async (activeInterface) => {
+    try {
+      setInterfacesLoading(true)
+      setInterfacesError('')
+
+      const response = await api.get('/api/capture/interfaces')
+      const availableInterfaces = response.data.interfaces || []
+
+      setInterfaces(availableInterfaces)
+
+      // Keep the user's selection, otherwise prefer the active interface
+      setSelectedInterface((currentInterface) => {
+        if (currentInterface) {
+          return currentInterface
+        }
+
+        const preferredInterface = availableInterfaces.find(
+          (item) => item.name === activeInterface
+        )
+
+        return preferredInterface
+          ? preferredInterface.name
+          : availableInterfaces[0]?.name || ''
+      })
+
+    } catch (error) {
+      console.error('Interface fetch error:', error)
+      setInterfacesError('Unable to fetch network interfaces')
+    } finally {
+      setInterfacesLoading(false)
+    }
+  }, [])
 
   // Start or stop packet capture
   const handleCaptureAction = async (action) => {
@@ -91,7 +131,13 @@ function App() {
       setCaptureLoading(true)
       setCaptureError('')
 
-      await api.post(`/api/capture/${action}`)
+      if (action === 'start') {
+        await api.post('/api/capture/start', {
+          interface: selectedInterface
+        })
+      } else {
+        await api.post(`/api/capture/${action}`)
+      }
 
       await fetchCaptureStatus()
 
@@ -112,12 +158,17 @@ function App() {
 
   // Automatically refresh capture status every 5 seconds
   useEffect(() => {
-    fetchCaptureStatus()
+    const initializeCapture = async () => {
+      const status = await fetchCaptureStatus()
+      await fetchInterfaces(status?.interface)
+    }
+
+    initializeCapture()
 
     const interval = setInterval(fetchCaptureStatus, 5000)
 
     return () => clearInterval(interval)
-  }, [])
+  }, [fetchCaptureStatus, fetchInterfaces])
   // Update alert status through the backend API
   const updateAlertStatus = async (alertId, newStatus) => {
     try {
@@ -397,6 +448,52 @@ const filteredTraffic = trafficData.filter((traffic) => {
               <div className="flex flex-wrap items-center gap-3">
 
                 <div className="mr-3">
+                  <label
+                    htmlFor="capture-interface"
+                    className="text-xs text-gray-500"
+                  >
+                    Network Interface
+                  </label>
+
+                  <select
+                    id="capture-interface"
+                    value={selectedInterface}
+                    onChange={(e) => setSelectedInterface(e.target.value)}
+                    disabled={
+                      captureLoading ||
+                      captureStatus.status === 'running'
+                    }
+                    className="mt-1 w-full rounded-lg border border-gray-700 bg-[#0d1422] px-4 py-3 text-sm text-gray-300 outline-none focus:border-blue-500 disabled:cursor-not-allowed disabled:opacity-40"
+                  >
+                    {interfaces.length === 0 && (
+                      <option value="">
+                        {interfacesLoading
+                          ? 'Loading interfaces...'
+                          : 'No interfaces available'}
+                      </option>
+                    )}
+
+                    {interfaces.map((networkInterface) => (
+                      <option
+                        key={networkInterface.name}
+                        value={networkInterface.name}
+                        title={networkInterface.description}
+                      >
+                        {networkInterface.name}
+                      </option>
+                    ))}
+                  </select>
+
+                  {selectedInterface && (
+                    <p className="mt-1 max-w-[16rem] text-xs text-gray-500">
+                      {interfaces.find(
+                        (item) => item.name === selectedInterface
+                      )?.description || ''}
+                    </p>
+                  )}
+                </div>
+
+                <div className="mr-3">
                   <p className="text-xs text-gray-500">
                     Packets Captured
                   </p>
@@ -448,6 +545,12 @@ const filteredTraffic = trafficData.filter((traffic) => {
             {captureError && (
               <div className="mt-4 rounded-lg border border-red-500/30 bg-red-500/10 p-3 text-sm text-red-400">
                 {captureError}
+              </div>
+            )}
+
+            {interfacesError && (
+              <div className="mt-4 rounded-lg border border-red-500/30 bg-red-500/10 p-3 text-sm text-red-400">
+                {interfacesError}
               </div>
             )}
 

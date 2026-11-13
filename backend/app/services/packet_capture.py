@@ -26,12 +26,62 @@ _scan_lock = threading.Lock()
 _packets_captured = 0
 _last_error = None
 _local_ip = None
+_capture_interface = CAPTURE_INTERFACE
 
 # Store incoming TCP SYN requests by source IP
 _scan_attempts = defaultdict(deque)
 
 # Prevent repeated alerts within the detection window
 _scan_alerted_until = {}
+
+
+def get_available_interfaces():
+    """
+    Return available network interfaces with
+    their friendly names and descriptions.
+    """
+
+    from scapy.arch.windows import get_windows_if_list
+
+    interfaces = []
+
+    for interface in get_windows_if_list():
+
+        name = interface.get("name", "")
+        description = interface.get("description", "")
+
+        combined = f"{name} {description}".lower()
+
+        # Exclude loopback and clearly virtual interfaces
+        if (
+            "loopback" in combined
+            or "pseudo" in combined
+            or "virtual" in combined
+            or "vpn" in combined
+            or "tap" in combined
+            or "tun" in combined
+            or "wan miniport" in combined
+            or "teredo" in combined
+            or "6to4" in combined
+            or "ip-https" in combined
+            or "bluetooth" in combined
+            or "kernel debugger" in combined
+            or name.startswith("Local Area Connection*")
+            or "-wfp" in combined
+            or "-npcap" in combined
+            or "-qos" in combined
+            or "-filter" in combined
+            or "filter driver" in combined
+            or "-driver" in combined
+        ):
+            continue
+
+        interfaces.append({
+            "name": name,
+            "description": description
+        })
+
+    return interfaces
 
 
 def detect_incoming_port_scan(source_ip, destination_port):
@@ -189,12 +239,14 @@ def process_packet(packet):
         db.close()
 
 
-def start_capture():
+def start_capture(interface=None):
     """
     Start background packet capture.
     """
 
-    global _sniffer, _local_ip
+    global _sniffer, _local_ip, _capture_interface
+
+    selected_interface = interface or CAPTURE_INTERFACE
 
     with _capture_lock:
 
@@ -204,17 +256,31 @@ def start_capture():
                 "status": "running"
             }
 
+        # Validate explicitly requested interfaces only.
+        # The default interface is used as-is to preserve behavior.
+        if interface:
+
+            available_interfaces = {
+                item["name"] for item in get_available_interfaces()
+            }
+
+            if selected_interface not in available_interfaces:
+                raise ValueError(
+                    f"Invalid network interface: {selected_interface}"
+                )
+
         try:
 
-            _local_ip = get_if_addr(CAPTURE_INTERFACE)
+            _local_ip = get_if_addr(selected_interface)
 
             if not _local_ip or _local_ip == "0.0.0.0":
                 raise RuntimeError(
-                    "Could not identify the Wi-Fi IPv4 address"
+                    f"Could not identify the IPv4 address for "
+                    f"{selected_interface}"
                 )
 
             _sniffer = AsyncSniffer(
-                iface=CAPTURE_INTERFACE,
+                iface=selected_interface,
                 filter="ip",
                 prn=process_packet,
                 store=False
@@ -222,10 +288,12 @@ def start_capture():
 
             _sniffer.start()
 
+            _capture_interface = selected_interface
+
             return {
                 "message": "Packet capture started successfully",
                 "status": "running",
-                "interface": CAPTURE_INTERFACE,
+                "interface": selected_interface,
                 "local_ip": _local_ip
             }
 
@@ -282,7 +350,7 @@ def get_capture_status():
 
     return {
         "status": "running" if running else "stopped",
-        "interface": CAPTURE_INTERFACE,
+        "interface": _capture_interface,
         "local_ip": _local_ip,
         "packets_captured": _packets_captured,
         "last_error": _last_error
