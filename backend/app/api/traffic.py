@@ -12,6 +12,7 @@ from app.services.detection import (
 )
 
 from app.services.alerts import create_security_alert
+from app.services.websocket_events import emit_event, serialize_traffic
 
 
 router = APIRouter(
@@ -71,6 +72,11 @@ def create_traffic(
     # Update traffic record
     db.commit()
     db.refresh(new_traffic)
+
+    emit_event(
+        "traffic.created",
+        serialize_traffic(new_traffic)
+    )
 
     # Convert alerts into dictionaries
     alert_data = []

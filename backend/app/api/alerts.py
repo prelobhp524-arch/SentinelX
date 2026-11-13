@@ -4,6 +4,7 @@ from pydantic import BaseModel
 
 from app.core.database import get_db
 from app.models.alert import Alert
+from app.services.websocket_events import emit_event, serialize_alert
 
 
 router = APIRouter(prefix="/api/alerts", tags=["Security Alerts"])
@@ -53,10 +54,19 @@ def update_alert_status(
             detail="Security alert not found"
         )
 
+    previous_status = alert.status
+
     alert.status = update.status
 
     db.commit()
     db.refresh(alert)
+
+    if previous_status != alert.status:
+        emit_event(
+            "alert.updated",
+            serialize_alert(alert),
+            previous_status=previous_status
+        )
 
     return {
         "message": "Alert status updated successfully",

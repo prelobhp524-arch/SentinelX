@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import api from './services/api'
 
 import {
@@ -78,6 +78,13 @@ function App() {
   const [trafficDirectionFilter, setTrafficDirectionFilter] = useState('ALL')
   const [trafficProtocolFilter, setTrafficProtocolFilter] = useState('ALL')
   const [statusFilter, setStatusFilter] = useState('ALL')
+
+  // WebSocket connection management
+  const socketRef = useRef(null)
+  const reconnectTimerRef = useRef(null)
+  const reconnectAttemptsRef = useRef(0)
+  const shouldReconnectRef = useRef(true)
+
     // Fetch packet capture status
   const fetchCaptureStatus = useCallback(async () => {
     try {
@@ -272,6 +279,170 @@ function App() {
       clearInterval(interval)
     }
   }, [updatingAlertId])
+
+  // Real-time updates through WebSocket
+  useEffect(() => {
+    shouldReconnectRef.current = true
+
+    const normalizeTimestamps = (record) => {
+      if (!record || typeof record.timestamp !== 'string') {
+        return record
+      }
+
+      if (record.timestamp.endsWith('Z')) {
+        return {
+          ...record,
+          timestamp: record.timestamp.slice(0, -1)
+        }
+      }
+
+      return record
+    }
+
+    const handleEvent = (event) => {
+      if (!event || !event.type || !event.data) {
+        return
+      }
+
+      const data = normalizeTimestamps(event.data)
+
+      if (event.type === 'traffic.created') {
+        setTrafficData((previousTraffic) => {
+          const remainingTraffic = previousTraffic.filter(
+            (traffic) => traffic.id !== data.id
+          )
+
+          return [data, ...remainingTraffic]
+        })
+
+        return
+      }
+
+      if (event.type === 'alert.created') {
+        setAlertData((previousAlerts) => {
+          const remainingAlerts = previousAlerts.filter(
+            (alert) => alert.id !== data.id
+          )
+
+          return [data, ...remainingAlerts]
+        })
+
+        return
+      }
+
+      if (event.type === 'alert.updated') {
+        setAlertData((previousAlerts) => {
+          const alertExists = previousAlerts.some(
+            (alert) => alert.id === data.id
+          )
+
+          if (!alertExists) {
+            return [data, ...previousAlerts]
+          }
+
+          return previousAlerts.map((alert) =>
+            alert.id === data.id
+              ? { ...alert, ...data }
+              : alert
+          )
+        })
+      }
+    }
+
+    const connect = () => {
+      if (!shouldReconnectRef.current) {
+        return
+      }
+
+      const currentSocket = socketRef.current
+
+      if (
+        currentSocket &&
+        (
+          currentSocket.readyState === WebSocket.CONNECTING ||
+          currentSocket.readyState === WebSocket.OPEN
+        )
+      ) {
+        return
+      }
+
+      if (reconnectTimerRef.current) {
+        clearTimeout(reconnectTimerRef.current)
+        reconnectTimerRef.current = null
+      }
+
+      const socket = new WebSocket('ws://127.0.0.1:8000/ws')
+      socketRef.current = socket
+
+      socket.onopen = () => {
+        reconnectAttemptsRef.current = 0
+      }
+
+      socket.onmessage = (message) => {
+        try {
+          const event = JSON.parse(message.data)
+          handleEvent(event)
+        } catch (error) {
+          console.error('WebSocket message error:', error)
+        }
+      }
+
+      socket.onerror = () => {
+        socket.close()
+      }
+
+      socket.onclose = () => {
+        if (socketRef.current === socket) {
+          socketRef.current = null
+        }
+
+        if (!shouldReconnectRef.current || reconnectTimerRef.current) {
+          return
+        }
+
+        const delay = Math.min(
+          1000 * 2 ** reconnectAttemptsRef.current,
+          30000
+        )
+
+        reconnectAttemptsRef.current += 1
+
+        reconnectTimerRef.current = setTimeout(() => {
+          reconnectTimerRef.current = null
+          connect()
+        }, delay)
+      }
+    }
+
+    connect()
+
+    return () => {
+      shouldReconnectRef.current = false
+
+      if (reconnectTimerRef.current) {
+        clearTimeout(reconnectTimerRef.current)
+        reconnectTimerRef.current = null
+      }
+
+      const socket = socketRef.current
+
+      if (socket) {
+        socket.onopen = null
+        socket.onmessage = null
+        socket.onerror = null
+        socket.onclose = null
+
+        try {
+          socket.close(1000, 'component unmounted')
+        } catch (error) {
+          console.error('WebSocket cleanup error:', error)
+        }
+
+        socketRef.current = null
+      }
+    }
+  }, [])
+
   // Filter network traffic by direction and protocol
 const filteredTraffic = trafficData.filter((traffic) => {
   const matchesDirection =

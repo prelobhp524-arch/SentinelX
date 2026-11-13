@@ -9,6 +9,7 @@ from app.core.database import SessionLocal
 from app.models.traffic import Traffic
 
 from app.services.alerts import create_security_alert
+from app.services.websocket_events import emit_event, serialize_traffic
 
 
 # Network interface
@@ -187,6 +188,7 @@ def process_packet(packet):
     packet_size = len(packet)
 
     db = SessionLocal()
+    traffic_event = None
 
     try:
 
@@ -230,6 +232,9 @@ def process_packet(packet):
         _packets_captured += 1
         _last_error = None
 
+        db.refresh(new_traffic)
+        traffic_event = serialize_traffic(new_traffic)
+
     except Exception as error:
 
         db.rollback()
@@ -237,6 +242,12 @@ def process_packet(packet):
 
     finally:
         db.close()
+
+    if traffic_event:
+        emit_event(
+            "traffic.created",
+            traffic_event
+        )
 
 
 def start_capture(interface=None):

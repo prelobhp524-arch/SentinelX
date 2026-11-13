@@ -1,6 +1,7 @@
 from sqlalchemy.orm import Session
 
 from app.models.alert import Alert
+from app.services.websocket_events import emit_event, serialize_alert
 
 
 def create_security_alert(db: Session, detection_result: dict):
@@ -60,5 +61,10 @@ def create_security_alert(db: Session, detection_result: dict):
     db.add(alert)
     db.commit()
     db.refresh(alert)
+
+    emit_event(
+        "alert.created",
+        serialize_alert(alert)
+    )
 
     return alert

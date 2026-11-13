@@ -1,3 +1,7 @@
+import asyncio
+
+from contextlib import asynccontextmanager
+
 from fastapi import FastAPI
 
 from app.api.traffic import router as traffic_router
@@ -5,12 +9,27 @@ from app.api.alerts import router as alerts_router
 from app.core.config import settings
 from app.api.analytics import router as analytics_router
 from app.api.capture import router as capture_router
+from app.api.websocket import router as websocket_router
+from app.services.websocket_manager import websocket_manager
 from fastapi.middleware.cors import CORSMiddleware
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+
+    websocket_manager.register_loop(asyncio.get_running_loop())
+
+    try:
+        yield
+    finally:
+        websocket_manager.clear_loop()
+
 
 app = FastAPI(
     title=settings.PROJECT_NAME,
     description="Real-Time Network Intrusion Detection and Prevention System",
-    version=settings.PROJECT_VERSION
+    version=settings.PROJECT_VERSION,
+    lifespan=lifespan
 )
 # Enable CORS for React frontend
 app.add_middleware(
@@ -28,6 +47,7 @@ app.include_router(traffic_router)
 app.include_router(alerts_router)
 app.include_router(analytics_router)
 app.include_router(capture_router)
+app.include_router(websocket_router)
 
 @app.get("/")
 def home():
