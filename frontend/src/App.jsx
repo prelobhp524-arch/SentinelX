@@ -74,8 +74,11 @@ function App() {
 
   const [loading, setLoading] = useState(true)
   const [apiError, setApiError] = useState('')
+  const [lastUpdatedAt, setLastUpdatedAt] = useState(null)
+  const [now, setNow] = useState(() => Date.now())
   const [updatingAlertId, setUpdatingAlertId] = useState(null)
   const [alertActionError, setAlertActionError] = useState('')
+  const [alertAnalyticsError, setAlertAnalyticsError] = useState('')
   const [isNotificationsOpen, setIsNotificationsOpen] = useState(false)
   const [readAlertIds, setReadAlertIds] = useState([])
   const [isSidebarOpen, setIsSidebarOpen] = useState(false)
@@ -190,16 +193,30 @@ function App() {
   }, [fetchCaptureStatus, fetchInterfaces])
   // Update alert status through the backend API
   const updateAlertStatus = async (alertId, newStatus) => {
-    try {
-      setUpdatingAlertId(alertId)
-      setAlertActionError('')
+    setUpdatingAlertId(alertId)
+    setAlertActionError('')
+    setAlertAnalyticsError('')
 
-      const response = await api.patch(
-        `/api/alerts/${alertId}/status`,
-        {
-          status: newStatus,
-        }
-      )
+    try {
+      let response
+
+      try {
+        response = await api.patch(
+          `/api/alerts/${alertId}/status`,
+          {
+            status: newStatus,
+          }
+        )
+      } catch (error) {
+        console.error('Alert update error:', error)
+
+        setAlertActionError(
+          error.response?.data?.detail ||
+          'Unable to update alert status. Please try again.'
+        )
+
+        return
+      }
 
       const updatedAlert = response.data.data
 
@@ -210,21 +227,32 @@ function App() {
       )
 
       // Refresh analytics after changing alert status
-      const [summaryResponse, severityResponse] = await Promise.all([
+      const [summaryResult, severityResult] = await Promise.allSettled([
         api.get('/api/analytics/summary'),
         api.get('/api/analytics/alerts-by-severity'),
       ])
 
-      setStats(summaryResponse.data)
-      setAlertSeverityData(severityResponse.data)
+      const analyticsFailures = []
 
-    } catch (error) {
-      console.error('Alert update error:', error)
+      if (summaryResult.status === 'fulfilled') {
+        setStats(summaryResult.value.data)
+      } else {
+        console.error('Alert summary refresh error:', summaryResult.reason)
+        analyticsFailures.push('summary statistics')
+      }
 
-      setAlertActionError(
-        error.response?.data?.detail ||
-        'Unable to update alert status. Please try again.'
-      )
+      if (severityResult.status === 'fulfilled') {
+        setAlertSeverityData(severityResult.value.data)
+      } else {
+        console.error('Alert severity refresh error:', severityResult.reason)
+        analyticsFailures.push('alert severity data')
+      }
+
+      if (analyticsFailures.length > 0) {
+        setAlertAnalyticsError(
+          `Alert status updated successfully, but ${analyticsFailures.join(' and ')} could not be refreshed.`
+        )
+      }
 
     } finally {
       setUpdatingAlertId(null)
@@ -256,14 +284,7 @@ function App() {
       isFetchingDashboardRef.current = true
 
       try {
-        const [
-          statsResponse,
-          protocolResponse,
-          alertsResponse,
-          topIPsResponse,
-          trafficResponse,
-          alertsListResponse,
-        ] = await Promise.all([
+        const results = await Promise.allSettled([
           api.get('/api/analytics/summary'),
           api.get('/api/analytics/traffic-by-protocol'),
           api.get('/api/analytics/alerts-by-severity'),
@@ -274,18 +295,69 @@ function App() {
 
         if (!isMounted) return
 
-        setStats(statsResponse.data)
-        setProtocolData(protocolResponse.data)
-        setAlertSeverityData(alertsResponse.data)
-        setTopSourceIPs(topIPsResponse.data)
-        setTrafficData(trafficResponse.data.slice(0, MAX_TRAFFIC_ITEMS))
+        const [
+          statsResult,
+          protocolResult,
+          alertSeverityResult,
+          topIPsResult,
+          trafficResult,
+          alertsListResult,
+        ] = results
 
-        // Do not overwrite alerts while a status update is happening
-        if (updatingAlertId === null) {
-          setAlertData(alertsListResponse.data.slice(0, MAX_ALERT_ITEMS))
+        const failedSections = []
+
+        if (statsResult.status === 'fulfilled') {
+          setStats(statsResult.value.data)
+        } else {
+          failedSections.push('analytics summary')
         }
 
-        setApiError('')
+        if (protocolResult.status === 'fulfilled') {
+          setProtocolData(protocolResult.value.data)
+        } else {
+          failedSections.push('traffic by protocol')
+        }
+
+        if (alertSeverityResult.status === 'fulfilled') {
+          setAlertSeverityData(alertSeverityResult.value.data)
+        } else {
+          failedSections.push('alerts by severity')
+        }
+
+        if (topIPsResult.status === 'fulfilled') {
+          setTopSourceIPs(topIPsResult.value.data)
+        } else {
+          failedSections.push('top source IPs')
+        }
+
+        if (trafficResult.status === 'fulfilled') {
+          setTrafficData(
+            trafficResult.value.data.slice(0, MAX_TRAFFIC_ITEMS)
+          )
+        } else {
+          failedSections.push('traffic list')
+        }
+
+        if (alertsListResult.status === 'fulfilled') {
+          // Do not overwrite alerts while a status update is happening
+          if (updatingAlertId === null) {
+            setAlertData(
+              alertsListResult.value.data.slice(0, MAX_ALERT_ITEMS)
+            )
+          }
+        } else {
+          failedSections.push('alerts list')
+        }
+
+        if (failedSections.length === 0) {
+          setApiError('')
+          setAlertAnalyticsError('')
+          setLastUpdatedAt(Date.now())
+        } else {
+          setApiError(
+            `Unable to refresh ${failedSections.join(', ')}. Data for those sections was left unchanged.`
+          )
+        }
 
       } catch (error) {
         console.error('Dashboard API error:', error)
@@ -312,6 +384,15 @@ function App() {
       clearInterval(interval)
     }
   }, [updatingAlertId])
+
+  // Update dashboard freshness clock every 5 seconds
+  useEffect(() => {
+    const interval = setInterval(() => {
+      setNow(Date.now())
+    }, 5000)
+
+    return () => clearInterval(interval)
+  }, [])
 
   // Real-time updates through WebSocket
   useEffect(() => {
@@ -582,6 +663,26 @@ function App() {
     () => alertData.filter((alert) => alert.status !== 'RESOLVED').length,
     [alertData]
   )
+
+  const isDashboardStale =
+    Boolean(apiError) ||
+    (lastUpdatedAt !== null && now - lastUpdatedAt > 15000) ||
+    (!loading && lastUpdatedAt === null)
+
+  const apiStatus = apiError
+    ? 'Degraded'
+    : lastUpdatedAt === null
+      ? 'Checking'
+      : 'Operational'
+
+  const formattedLastUpdated = lastUpdatedAt
+    ? new Date(lastUpdatedAt).toLocaleTimeString([], {
+        hour: '2-digit',
+        minute: '2-digit',
+        second: '2-digit',
+        hour12: false,
+      })
+    : null
 
   const handleSectionNavigation = (sectionId) => {
     const section = document.getElementById(sectionId)
@@ -867,9 +968,27 @@ function App() {
                       : 'Connecting'}
               </div>
 
-              <div className="rounded-lg border border-green-500/30 bg-green-500/10 px-4 py-2 text-sm text-green-400">
-                ● System Online
+              <div className={`rounded-lg border px-4 py-2 text-sm ${
+                apiStatus === 'Operational'
+                  ? 'border-green-500/30 bg-green-500/10 text-green-400'
+                  : apiStatus === 'Degraded'
+                    ? 'border-red-500/30 bg-red-500/10 text-red-400'
+                    : 'border-amber-500/30 bg-amber-500/10 text-amber-400'
+              }`}>
+                ● API: {apiStatus}
               </div>
+
+              <div className="rounded-lg border border-gray-700 bg-gray-800/40 px-4 py-2 text-sm text-gray-400">
+                {formattedLastUpdated
+                  ? `Updated ${formattedLastUpdated}`
+                  : 'No successful refresh yet'}
+              </div>
+
+              {isDashboardStale && (
+                <div className="rounded-lg border border-amber-500/30 bg-amber-500/10 px-4 py-2 text-sm text-amber-400">
+                  Data may be stale
+                </div>
+              )}
             </div>
           </div>
                     {/* Packet Capture Controls */}
@@ -1478,6 +1597,13 @@ function App() {
             {alertActionError && (
               <div className="m-6 rounded-lg border border-red-500/30 bg-red-500/10 p-3 text-sm text-red-400">
                 {alertActionError}
+              </div>
+            )}
+
+            {/* Alert Analytics Refresh Error */}
+            {alertAnalyticsError && (
+              <div className="m-6 rounded-lg border border-yellow-500/30 bg-yellow-500/10 p-3 text-sm text-yellow-400">
+                {alertAnalyticsError}
               </div>
             )}
 
