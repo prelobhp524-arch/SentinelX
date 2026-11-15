@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import api from './services/api'
 
 import {
@@ -38,6 +38,9 @@ const SEVERITY_COLORS = {
   MEDIUM: '#f59e0b',
   LOW: '#22c55e',
 }
+
+const MAX_TRAFFIC_ITEMS = 500
+const MAX_ALERT_ITEMS = 200
 
 function App() {
   const [stats, setStats] = useState({
@@ -92,6 +95,7 @@ function App() {
   const reconnectAttemptsRef = useRef(0)
   const shouldReconnectRef = useRef(true)
   const notificationsRef = useRef(null)
+  const isFetchingDashboardRef = useRef(false)
 
     // Fetch packet capture status
   const fetchCaptureStatus = useCallback(async () => {
@@ -245,6 +249,12 @@ function App() {
     let isMounted = true
 
     const fetchDashboard = async () => {
+      if (isFetchingDashboardRef.current) {
+        return
+      }
+
+      isFetchingDashboardRef.current = true
+
       try {
         const [
           statsResponse,
@@ -268,11 +278,11 @@ function App() {
         setProtocolData(protocolResponse.data)
         setAlertSeverityData(alertsResponse.data)
         setTopSourceIPs(topIPsResponse.data)
-        setTrafficData(trafficResponse.data)
+        setTrafficData(trafficResponse.data.slice(0, MAX_TRAFFIC_ITEMS))
 
         // Do not overwrite alerts while a status update is happening
         if (updatingAlertId === null) {
-          setAlertData(alertsListResponse.data)
+          setAlertData(alertsListResponse.data.slice(0, MAX_ALERT_ITEMS))
         }
 
         setApiError('')
@@ -285,6 +295,8 @@ function App() {
         }
 
       } finally {
+        isFetchingDashboardRef.current = false
+
         if (isMounted) {
           setLoading(false)
         }
@@ -333,7 +345,7 @@ function App() {
             (traffic) => traffic.id !== data.id
           )
 
-          return [data, ...remainingTraffic]
+          return [data, ...remainingTraffic].slice(0, MAX_TRAFFIC_ITEMS)
         })
 
         return
@@ -345,7 +357,7 @@ function App() {
             (alert) => alert.id !== data.id
           )
 
-          return [data, ...remainingAlerts]
+          return [data, ...remainingAlerts].slice(0, MAX_ALERT_ITEMS)
         })
 
         return
@@ -358,7 +370,7 @@ function App() {
           )
 
           if (!alertExists) {
-            return [data, ...previousAlerts]
+            return [data, ...previousAlerts].slice(0, MAX_ALERT_ITEMS)
           }
 
           return previousAlerts.map((alert) =>
@@ -519,40 +531,56 @@ function App() {
   }, [isSidebarOpen])
 
   // Filter network traffic by direction and protocol
-const filteredTraffic = trafficData.filter((traffic) => {
-  const matchesDirection =
-    trafficDirectionFilter === 'ALL' ||
-    traffic.direction === trafficDirectionFilter
+  const filteredTraffic = useMemo(
+    () =>
+      trafficData.filter((traffic) => {
+        const matchesDirection =
+          trafficDirectionFilter === 'ALL' ||
+          traffic.direction === trafficDirectionFilter
 
-  const matchesProtocol =
-    trafficProtocolFilter === 'ALL' ||
-    traffic.protocol === trafficProtocolFilter
+        const matchesProtocol =
+          trafficProtocolFilter === 'ALL' ||
+          traffic.protocol === trafficProtocolFilter
 
-  return matchesDirection && matchesProtocol
-})
+        return matchesDirection && matchesProtocol
+      }),
+    [trafficData, trafficDirectionFilter, trafficProtocolFilter]
+  )
+
   // Filter alerts based on search, severity, and status
-  const filteredAlerts = alertData.filter((alert) => {
-    const searchValue = alertSearch.toLowerCase().trim()
+  const filteredAlerts = useMemo(() => {
+    const searchValue = alertSearch.trim().toLowerCase()
 
-    const matchesSearch =
-      String(alert.source_ip || '').toLowerCase().includes(searchValue) ||
-      String(alert.alert_type || '').toLowerCase().includes(searchValue) ||
-      String(alert.id).includes(searchValue)
+    return alertData.filter((alert) => {
+      const matchesSearch =
+        String(alert.source_ip || '').toLowerCase().includes(searchValue) ||
+        String(alert.alert_type || '').toLowerCase().includes(searchValue) ||
+        String(alert.id).includes(searchValue)
 
-    const matchesSeverity =
-      severityFilter === 'ALL' || alert.severity === severityFilter
+      const matchesSeverity =
+        severityFilter === 'ALL' || alert.severity === severityFilter
 
-    const matchesStatus =
-      statusFilter === 'ALL' || alert.status === statusFilter
+      const matchesStatus =
+        statusFilter === 'ALL' || alert.status === statusFilter
 
-    return matchesSearch && matchesSeverity && matchesStatus
-  })
+      return matchesSearch && matchesSeverity && matchesStatus
+    })
+  }, [alertData, alertSearch, severityFilter, statusFilter])
 
-  const recentAlerts = alertData.slice(0, 5)
+  const recentAlerts = useMemo(() => alertData.slice(0, 5), [alertData])
 
-  const unreadAlerts = alertData.filter(
-    (alert) =>
-      alert.status === 'NEW' && !readAlertIds.includes(alert.id)
+  const unreadAlerts = useMemo(() => {
+    const readAlertIdSet = new Set(readAlertIds)
+
+    return alertData.filter(
+      (alert) =>
+        alert.status === 'NEW' && !readAlertIdSet.has(alert.id)
+    )
+  }, [alertData, readAlertIds])
+
+  const activeAlertsCount = useMemo(
+    () => alertData.filter((alert) => alert.status !== 'RESOLVED').length,
+    [alertData]
   )
 
   const handleSectionNavigation = (sectionId) => {
@@ -1380,7 +1408,7 @@ const filteredTraffic = trafficData.filter((traffic) => {
                 </div>
 
                 <span className="rounded-lg border border-yellow-500/30 bg-yellow-500/10 px-3 py-2 text-xs text-yellow-400">
-                  {alertData.filter((alert) => alert.status !== 'RESOLVED').length} Active Alerts
+                  {activeAlertsCount} Active Alerts
                 </span>
 
               </div>
