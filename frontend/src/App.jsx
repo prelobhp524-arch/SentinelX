@@ -23,9 +23,11 @@ import {
   Network,
   Settings,
   Search,
+  Menu,
   Bell,
   User,
   ChevronDown,
+  X,
   Play,
   Square,
   RefreshCw,
@@ -73,6 +75,8 @@ function App() {
   const [alertActionError, setAlertActionError] = useState('')
   const [isNotificationsOpen, setIsNotificationsOpen] = useState(false)
   const [readAlertIds, setReadAlertIds] = useState([])
+  const [isSidebarOpen, setIsSidebarOpen] = useState(false)
+  const [activeSection, setActiveSection] = useState('dashboard-overview')
 
   // Alert search and filters
   const [alertSearch, setAlertSearch] = useState('')
@@ -495,6 +499,25 @@ function App() {
     }
   }, [isNotificationsOpen])
 
+  // Close mobile sidebar with Escape
+  useEffect(() => {
+    if (!isSidebarOpen) {
+      return
+    }
+
+    const handleSidebarEscape = (event) => {
+      if (event.key === 'Escape') {
+        setIsSidebarOpen(false)
+      }
+    }
+
+    document.addEventListener('keydown', handleSidebarEscape)
+
+    return () => {
+      document.removeEventListener('keydown', handleSidebarEscape)
+    }
+  }, [isSidebarOpen])
+
   // Filter network traffic by direction and protocol
 const filteredTraffic = trafficData.filter((traffic) => {
   const matchesDirection =
@@ -532,23 +555,66 @@ const filteredTraffic = trafficData.filter((traffic) => {
       alert.status === 'NEW' && !readAlertIds.includes(alert.id)
   )
 
+  const handleSectionNavigation = (sectionId) => {
+    const section = document.getElementById(sectionId)
+
+    if (section) {
+      section.scrollIntoView({ behavior: 'smooth', block: 'start' })
+      setActiveSection(sectionId)
+    }
+
+    setIsSidebarOpen(false)
+  }
+
+  const getNavClass = (sectionId) =>
+    `flex w-full items-center gap-3 rounded-lg px-4 py-3 text-left transition ${
+      activeSection === sectionId
+        ? 'bg-blue-600/15 text-blue-400'
+        : 'text-gray-400 hover:bg-gray-800 hover:text-white'
+    }`
+
   return (
     <div className="min-h-screen bg-[#080d18] text-gray-200">
 
+      {/* Mobile Sidebar Backdrop */}
+      {isSidebarOpen && (
+        <div
+          className="fixed inset-0 z-30 bg-black/50 lg:hidden"
+          onClick={() => setIsSidebarOpen(false)}
+          aria-hidden="true"
+        />
+      )}
+
       {/* Sidebar */}
-      <aside className="fixed left-0 top-0 h-screen w-64 border-r border-gray-800 bg-[#0d1422] p-6">
+      <aside
+        id="app-sidebar"
+        className={`fixed left-0 top-0 z-40 h-screen w-64 overflow-y-auto border-r border-gray-800 bg-[#0d1422] p-6 transition-transform duration-200 lg:translate-x-0 ${
+          isSidebarOpen ? 'translate-x-0' : '-translate-x-full'
+        }`}
+      >
 
-        <div className="mb-10 flex items-center gap-3">
-          <div className="rounded-xl bg-blue-600 p-2">
-            <Shield size={25} className="text-white" />
+        <div className="mb-10 flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <div className="rounded-xl bg-blue-600 p-2">
+              <Shield size={25} className="text-white" />
+            </div>
+
+            <div>
+              <h1 className="text-xl font-bold text-white">SentinelX</h1>
+              <p className="text-xs text-gray-500">
+                Network Security Monitor
+              </p>
+            </div>
           </div>
 
-          <div>
-            <h1 className="text-xl font-bold text-white">SentinelX</h1>
-            <p className="text-xs text-gray-500">
-              Network Security Monitor
-            </p>
-          </div>
+          <button
+            type="button"
+            onClick={() => setIsSidebarOpen(false)}
+            className="rounded-lg p-2 text-gray-400 transition hover:bg-gray-800 hover:text-white lg:hidden"
+            aria-label="Close navigation menu"
+          >
+            <X size={20} />
+          </button>
         </div>
 
         <p className="mb-4 text-xs font-semibold uppercase tracking-wider text-gray-500">
@@ -556,29 +622,44 @@ const filteredTraffic = trafficData.filter((traffic) => {
         </p>
 
         <nav className="space-y-2">
-          <button className="flex w-full items-center gap-3 rounded-lg bg-blue-600/15 px-4 py-3 text-left text-blue-400">
+          <button
+            onClick={() => handleSectionNavigation('dashboard-overview')}
+            className={getNavClass('dashboard-overview')}
+          >
             <LayoutDashboard size={19} />
             Dashboard
           </button>
 
-          <button className="flex w-full items-center gap-3 rounded-lg px-4 py-3 text-left text-gray-400 hover:bg-gray-800 hover:text-white">
+          <button
+            onClick={() => handleSectionNavigation('network-traffic')}
+            className={getNavClass('network-traffic')}
+          >
             <Activity size={19} />
             Network Traffic
           </button>
 
-          <button className="flex w-full items-center gap-3 rounded-lg px-4 py-3 text-left text-gray-400 hover:bg-gray-800 hover:text-white">
+          <button
+            onClick={() => handleSectionNavigation('security-alerts')}
+            className={getNavClass('security-alerts')}
+          >
             <AlertTriangle size={19} />
             Security Alerts
           </button>
 
-          <button className="flex w-full items-center gap-3 rounded-lg px-4 py-3 text-left text-gray-400 hover:bg-gray-800 hover:text-white">
+          <button
+            onClick={() => handleSectionNavigation('ip-monitoring')}
+            className={getNavClass('ip-monitoring')}
+          >
             <Network size={19} />
             IP Monitoring
           </button>
         </nav>
 
         <div className="absolute bottom-6 left-6 right-6">
-          <button className="flex w-full items-center gap-3 rounded-lg px-4 py-3 text-gray-400 hover:bg-gray-800 hover:text-white">
+          <button
+            onClick={() => setIsSidebarOpen(false)}
+            className="flex w-full items-center gap-3 rounded-lg px-4 py-3 text-gray-400 hover:bg-gray-800 hover:text-white"
+          >
             <Settings size={19} />
             Settings
           </button>
@@ -586,23 +667,39 @@ const filteredTraffic = trafficData.filter((traffic) => {
       </aside>
 
       {/* Main Content */}
-      <main className="ml-64 min-h-screen">
+      <main className="min-h-screen lg:ml-64">
 
         {/* Top Navigation */}
-        <header className="flex h-20 items-center justify-between border-b border-gray-800 px-8">
+        <header className="sticky top-0 z-20 flex min-h-20 flex-wrap items-center justify-between gap-4 border-b border-gray-800 bg-[#080d18] px-4 py-4 sm:px-6 lg:px-8">
 
-          <div>
-            <h2 className="text-xl font-semibold text-white">
-              Security Dashboard
-            </h2>
+          <div className="flex min-w-0 items-center gap-3">
+            <button
+              type="button"
+              onClick={() => setIsSidebarOpen(true)}
+              className="rounded-lg border border-gray-800 p-2 text-gray-400 transition hover:bg-gray-800 hover:text-white lg:hidden"
+              aria-label="Open navigation menu"
+              aria-controls="app-sidebar"
+              aria-expanded={isSidebarOpen}
+            >
+              <Menu size={20} />
+            </button>
 
-            <p className="text-sm text-gray-500">
-              Monitor your network security in real time
-            </p>
+            <div className="min-w-0">
+              <h2 className="truncate text-lg font-semibold text-white sm:text-xl">
+                Security Dashboard
+              </h2>
+
+              <p className="hidden truncate text-xs text-gray-500 sm:block sm:text-sm">
+                Monitor your network security in real time
+              </p>
+            </div>
           </div>
 
-          <div className="flex items-center gap-5">
-            <button className="text-gray-400 hover:text-white">
+          <div className="flex flex-wrap items-center gap-3 sm:gap-5">
+            <button
+              className="hidden text-gray-400 hover:text-white sm:block"
+              aria-label="Search"
+            >
               <Search size={20} />
             </button>
 
@@ -624,7 +721,7 @@ const filteredTraffic = trafficData.filter((traffic) => {
               </button>
 
               {isNotificationsOpen && (
-                <div className="absolute right-0 top-12 z-20 w-80 rounded-xl border border-gray-800 bg-[#111b2b] shadow-xl">
+                <div className="fixed left-4 right-4 top-20 z-20 rounded-xl border border-gray-800 bg-[#111b2b] shadow-xl sm:absolute sm:left-auto sm:right-0 sm:top-12 sm:w-80">
                   <div className="flex items-center justify-between border-b border-gray-800 px-4 py-3">
                     <h4 className="text-sm font-semibold text-white">
                       Security Alerts
@@ -692,25 +789,25 @@ const filteredTraffic = trafficData.filter((traffic) => {
               )}
             </div>
 
-            <div className="flex items-center gap-2 border-l border-gray-800 pl-5">
+            <div className="flex items-center gap-2 border-l border-gray-800 pl-3 sm:pl-5">
               <div className="rounded-full bg-gray-700 p-2">
                 <User size={18} />
               </div>
 
-              <span className="text-sm text-gray-300">
+              <span className="hidden text-sm text-gray-300 sm:inline">
                 Administrator
               </span>
 
-              <ChevronDown size={15} className="text-gray-500" />
+              <ChevronDown size={15} className="hidden text-gray-500 sm:block" />
             </div>
           </div>
         </header>
 
         {/* Dashboard Body */}
-        <div className="p-8">
+        <div className="p-4 sm:p-6 lg:p-8">
 
           {/* Overview */}
-          <div className="mb-8 flex items-center justify-between">
+          <div id="dashboard-overview" className="mb-8 flex scroll-mt-20 flex-wrap items-center justify-between gap-4">
             <div>
               <h3 className="text-2xl font-bold text-white">
                 Overview
@@ -721,7 +818,7 @@ const filteredTraffic = trafficData.filter((traffic) => {
               </p>
             </div>
 
-            <div className="flex items-center gap-3">
+            <div className="flex flex-wrap items-center gap-3">
               <div
                 className={`rounded-lg border px-4 py-2 text-sm ${
                   wsStatus === 'connected'
@@ -1045,7 +1142,7 @@ const filteredTraffic = trafficData.filter((traffic) => {
             </div>
 
             {/* Top Source IPs */}
-            <div className="rounded-xl border border-gray-800 bg-[#111b2b] p-6 xl:col-span-2">
+            <div id="ip-monitoring" className="scroll-mt-20 rounded-xl border border-gray-800 bg-[#111b2b] p-6 xl:col-span-2">
 
               <h3 className="text-lg font-semibold text-white">
                 Top Source IP Addresses
@@ -1115,7 +1212,7 @@ const filteredTraffic = trafficData.filter((traffic) => {
           </div>
 
           {/* Recent Network Traffic */}
-          <div className="mt-8 overflow-hidden rounded-xl border border-gray-800 bg-[#111b2b]">
+          <div id="network-traffic" className="mt-8 scroll-mt-20 overflow-hidden rounded-xl border border-gray-800 bg-[#111b2b]">
 
             <div className="flex flex-col justify-between gap-4 border-b border-gray-800 p-6 sm:flex-row sm:items-center">
 
@@ -1160,7 +1257,7 @@ const filteredTraffic = trafficData.filter((traffic) => {
 
 </div>
             <div className="overflow-x-auto">
-              <table className="w-full text-left text-sm">
+              <table className="w-full min-w-[900px] text-left text-sm">
 
                 <thead className="bg-[#0d1422] text-xs uppercase text-gray-400">
                   <tr>
@@ -1266,7 +1363,7 @@ const filteredTraffic = trafficData.filter((traffic) => {
           </div>
 
           {/* Security Alerts Management */}
-          <div className="mt-8 overflow-hidden rounded-xl border border-gray-800 bg-[#111b2b]">
+          <div id="security-alerts" className="mt-8 scroll-mt-20 overflow-hidden rounded-xl border border-gray-800 bg-[#111b2b]">
 
             <div className="border-b border-gray-800 p-6">
 
@@ -1358,7 +1455,7 @@ const filteredTraffic = trafficData.filter((traffic) => {
 
             <div className="overflow-x-auto">
 
-              <table className="w-full text-left text-sm">
+              <table className="w-full min-w-[900px] text-left text-sm">
 
                 <thead className="bg-[#0d1422] text-xs uppercase text-gray-400">
                   <tr>
