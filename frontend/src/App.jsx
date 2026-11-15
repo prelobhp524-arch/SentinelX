@@ -80,6 +80,7 @@ function App() {
   const [statusFilter, setStatusFilter] = useState('ALL')
 
   // WebSocket connection management
+  const [wsStatus, setWsStatus] = useState('connecting')
   const socketRef = useRef(null)
   const reconnectTimerRef = useRef(null)
   const reconnectAttemptsRef = useRef(0)
@@ -376,6 +377,7 @@ function App() {
 
       socket.onopen = () => {
         reconnectAttemptsRef.current = 0
+        setWsStatus('connected')
       }
 
       socket.onmessage = (message) => {
@@ -395,6 +397,10 @@ function App() {
         if (socketRef.current === socket) {
           socketRef.current = null
         }
+
+        setWsStatus(
+          shouldReconnectRef.current ? 'reconnecting' : 'disconnected'
+        )
 
         if (!shouldReconnectRef.current || reconnectTimerRef.current) {
           return
@@ -581,8 +587,30 @@ const filteredTraffic = trafficData.filter((traffic) => {
               </p>
             </div>
 
-            <div className="rounded-lg border border-green-500/30 bg-green-500/10 px-4 py-2 text-sm text-green-400">
-              ● System Online
+            <div className="flex items-center gap-3">
+              <div
+                className={`rounded-lg border px-4 py-2 text-sm ${
+                  wsStatus === 'connected'
+                    ? 'border-green-500/30 bg-green-500/10 text-green-400'
+                    : wsStatus === 'reconnecting'
+                      ? 'border-orange-500/30 bg-orange-500/10 text-orange-400'
+                      : wsStatus === 'disconnected'
+                        ? 'border-red-500/30 bg-red-500/10 text-red-400'
+                        : 'border-amber-500/30 bg-amber-500/10 text-amber-400'
+                }`}
+              >
+                ● {wsStatus === 'connected'
+                  ? 'Connected'
+                  : wsStatus === 'reconnecting'
+                    ? 'Reconnecting'
+                    : wsStatus === 'disconnected'
+                      ? 'Disconnected'
+                      : 'Connecting'}
+              </div>
+
+              <div className="rounded-lg border border-green-500/30 bg-green-500/10 px-4 py-2 text-sm text-green-400">
+                ● System Online
+              </div>
             </div>
           </div>
                     {/* Packet Capture Controls */}
