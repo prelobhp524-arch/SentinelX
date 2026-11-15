@@ -71,6 +71,8 @@ function App() {
   const [apiError, setApiError] = useState('')
   const [updatingAlertId, setUpdatingAlertId] = useState(null)
   const [alertActionError, setAlertActionError] = useState('')
+  const [isNotificationsOpen, setIsNotificationsOpen] = useState(false)
+  const [readAlertIds, setReadAlertIds] = useState([])
 
   // Alert search and filters
   const [alertSearch, setAlertSearch] = useState('')
@@ -85,6 +87,7 @@ function App() {
   const reconnectTimerRef = useRef(null)
   const reconnectAttemptsRef = useRef(0)
   const shouldReconnectRef = useRef(true)
+  const notificationsRef = useRef(null)
 
     // Fetch packet capture status
   const fetchCaptureStatus = useCallback(async () => {
@@ -218,6 +221,19 @@ function App() {
     } finally {
       setUpdatingAlertId(null)
     }
+  }
+
+  // Mark alert notifications as read
+  const markAlertAsRead = (alertId) => {
+    setReadAlertIds((previousIds) =>
+      previousIds.includes(alertId)
+        ? previousIds
+        : [...previousIds, alertId]
+    )
+  }
+
+  const markAllAlertsAsRead = () => {
+    setReadAlertIds(alertData.map((alert) => alert.id))
   }
 
   // Fetch dashboard data
@@ -449,6 +465,36 @@ function App() {
     }
   }, [])
 
+  // Close notification panel on outside click or Escape
+  useEffect(() => {
+    if (!isNotificationsOpen) {
+      return
+    }
+
+    const handleOutsideClick = (event) => {
+      if (
+        notificationsRef.current &&
+        !notificationsRef.current.contains(event.target)
+      ) {
+        setIsNotificationsOpen(false)
+      }
+    }
+
+    const handleEscapeKey = (event) => {
+      if (event.key === 'Escape') {
+        setIsNotificationsOpen(false)
+      }
+    }
+
+    document.addEventListener('mousedown', handleOutsideClick)
+    document.addEventListener('keydown', handleEscapeKey)
+
+    return () => {
+      document.removeEventListener('mousedown', handleOutsideClick)
+      document.removeEventListener('keydown', handleEscapeKey)
+    }
+  }, [isNotificationsOpen])
+
   // Filter network traffic by direction and protocol
 const filteredTraffic = trafficData.filter((traffic) => {
   const matchesDirection =
@@ -478,6 +524,13 @@ const filteredTraffic = trafficData.filter((traffic) => {
 
     return matchesSearch && matchesSeverity && matchesStatus
   })
+
+  const recentAlerts = alertData.slice(0, 5)
+
+  const unreadAlerts = alertData.filter(
+    (alert) =>
+      alert.status === 'NEW' && !readAlertIds.includes(alert.id)
+  )
 
   return (
     <div className="min-h-screen bg-[#080d18] text-gray-200">
@@ -553,10 +606,91 @@ const filteredTraffic = trafficData.filter((traffic) => {
               <Search size={20} />
             </button>
 
-            <button className="relative text-gray-400 hover:text-white">
-              <Bell size={20} />
-              <span className="absolute -right-1 -top-1 h-2 w-2 rounded-full bg-red-500"></span>
-            </button>
+            <div ref={notificationsRef} className="relative">
+              <button
+                type="button"
+                onClick={() => setIsNotificationsOpen((open) => !open)}
+                className="relative text-gray-400 hover:text-white"
+                aria-label="Security alert notifications"
+                aria-expanded={isNotificationsOpen}
+              >
+                <Bell size={20} />
+
+                {unreadAlerts.length > 0 && (
+                  <span className="absolute -right-2 -top-2 flex h-5 min-w-5 items-center justify-center rounded-full bg-red-500 px-1 text-[10px] font-semibold text-white">
+                    {unreadAlerts.length > 99 ? '99+' : unreadAlerts.length}
+                  </span>
+                )}
+              </button>
+
+              {isNotificationsOpen && (
+                <div className="absolute right-0 top-12 z-20 w-80 rounded-xl border border-gray-800 bg-[#111b2b] shadow-xl">
+                  <div className="flex items-center justify-between border-b border-gray-800 px-4 py-3">
+                    <h4 className="text-sm font-semibold text-white">
+                      Security Alerts
+                    </h4>
+
+                    <button
+                      type="button"
+                      onClick={markAllAlertsAsRead}
+                      className="text-xs text-blue-400 transition hover:text-blue-300"
+                    >
+                      Mark all read
+                    </button>
+                  </div>
+
+                  <div className="max-h-80 overflow-y-auto">
+                    {recentAlerts.length === 0 ? (
+                      <p className="px-4 py-6 text-center text-sm text-gray-500">
+                        No recent alerts
+                      </p>
+                    ) : (
+                      recentAlerts.map((alert) => {
+                        const isUnread =
+                          alert.status === 'NEW' &&
+                          !readAlertIds.includes(alert.id)
+
+                        return (
+                          <button
+                            key={alert.id}
+                            type="button"
+                            onClick={() => markAlertAsRead(alert.id)}
+                            className={`flex w-full items-start gap-3 border-b border-gray-800 px-4 py-3 text-left transition last:border-0 hover:bg-gray-800/40 ${
+                              isUnread ? 'bg-blue-500/10' : ''
+                            }`}
+                          >
+                            <span
+                              className={`mt-1 h-2 w-2 shrink-0 rounded-full ${
+                                alert.severity === 'HIGH'
+                                  ? 'bg-red-500'
+                                  : alert.severity === 'MEDIUM'
+                                    ? 'bg-yellow-500'
+                                    : 'bg-green-500'
+                              }`}
+                            />
+
+                            <span className="min-w-0 flex-1">
+                              <span className="block truncate text-sm text-gray-200">
+                                {String(alert.alert_type || '').replaceAll('_', ' ')}
+                              </span>
+
+                              <span className="block truncate text-xs text-gray-500">
+                                {alert.source_ip} ·{' '}
+                                {new Date(`${alert.timestamp}Z`).toLocaleString()}
+                              </span>
+                            </span>
+
+                            <span className="text-[10px] font-medium text-gray-500">
+                              {alert.severity}
+                            </span>
+                          </button>
+                        )
+                      })
+                    )}
+                  </div>
+                </div>
+              )}
+            </div>
 
             <div className="flex items-center gap-2 border-l border-gray-800 pl-5">
               <div className="rounded-full bg-gray-700 p-2">
