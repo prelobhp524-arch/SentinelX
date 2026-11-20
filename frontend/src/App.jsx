@@ -99,6 +99,8 @@ function App() {
   const shouldReconnectRef = useRef(true)
   const notificationsRef = useRef(null)
   const isFetchingDashboardRef = useRef(false)
+  const trafficWsVersionRef = useRef(0)
+  const alertWsVersionRef = useRef(0)
 
     // Fetch packet capture status
   const fetchCaptureStatus = useCallback(async () => {
@@ -284,6 +286,9 @@ function App() {
       isFetchingDashboardRef.current = true
 
       try {
+        const trafficVersionAtStart = trafficWsVersionRef.current
+        const alertVersionAtStart = alertWsVersionRef.current
+
         const results = await Promise.allSettled([
           api.get('/api/analytics/summary'),
           api.get('/api/analytics/traffic-by-protocol'),
@@ -307,7 +312,9 @@ function App() {
         const failedSections = []
 
         if (statsResult.status === 'fulfilled') {
-          setStats(statsResult.value.data)
+          if (updatingAlertId === null) {
+            setStats(statsResult.value.data)
+          }
         } else {
           failedSections.push('analytics summary')
         }
@@ -319,7 +326,9 @@ function App() {
         }
 
         if (alertSeverityResult.status === 'fulfilled') {
-          setAlertSeverityData(alertSeverityResult.value.data)
+          if (updatingAlertId === null) {
+            setAlertSeverityData(alertSeverityResult.value.data)
+          }
         } else {
           failedSections.push('alerts by severity')
         }
@@ -331,16 +340,23 @@ function App() {
         }
 
         if (trafficResult.status === 'fulfilled') {
-          setTrafficData(
-            trafficResult.value.data.slice(0, MAX_TRAFFIC_ITEMS)
-          )
+          if (
+            trafficVersionAtStart === trafficWsVersionRef.current
+          ) {
+            setTrafficData(
+              trafficResult.value.data.slice(0, MAX_TRAFFIC_ITEMS)
+            )
+          }
         } else {
           failedSections.push('traffic list')
         }
 
         if (alertsListResult.status === 'fulfilled') {
-          // Do not overwrite alerts while a status update is happening
-          if (updatingAlertId === null) {
+          // Do not overwrite alerts during a status update or after a newer event
+          if (
+            updatingAlertId === null &&
+            alertVersionAtStart === alertWsVersionRef.current
+          ) {
             setAlertData(
               alertsListResult.value.data.slice(0, MAX_ALERT_ITEMS)
             )
@@ -421,6 +437,8 @@ function App() {
       const data = normalizeTimestamps(event.data)
 
       if (event.type === 'traffic.created') {
+        trafficWsVersionRef.current += 1
+
         setTrafficData((previousTraffic) => {
           const remainingTraffic = previousTraffic.filter(
             (traffic) => traffic.id !== data.id
@@ -433,6 +451,8 @@ function App() {
       }
 
       if (event.type === 'alert.created') {
+        alertWsVersionRef.current += 1
+
         setAlertData((previousAlerts) => {
           const remainingAlerts = previousAlerts.filter(
             (alert) => alert.id !== data.id
@@ -445,6 +465,8 @@ function App() {
       }
 
       if (event.type === 'alert.updated') {
+        alertWsVersionRef.current += 1
+
         setAlertData((previousAlerts) => {
           const alertExists = previousAlerts.some(
             (alert) => alert.id === data.id
