@@ -42,6 +42,52 @@ const SEVERITY_COLORS = {
 const MAX_TRAFFIC_ITEMS = 500
 const MAX_ALERT_ITEMS = 200
 
+const RISK_STYLES = {
+  NONE: 'border-green-500/30 bg-green-500/10 text-green-400',
+  LOW: 'border-green-500/30 bg-green-500/10 text-green-400',
+  MODERATE: 'border-yellow-500/30 bg-yellow-500/10 text-yellow-400',
+  HIGH: 'border-orange-500/30 bg-orange-500/10 text-orange-400',
+  VERY_HIGH: 'border-red-500/30 bg-red-500/10 text-red-400',
+  UNKNOWN: 'border-gray-600 bg-gray-700/30 text-gray-400',
+}
+
+const REPUTATION_STATE_LABELS = {
+  cached: 'Cached',
+  stale: 'Stale',
+  refreshed: 'Live',
+  unavailable: 'Unavailable',
+}
+
+const PROVIDER_ERROR_LABELS = {
+  disabled: 'Reputation provider is disabled',
+  missing_key: 'Reputation provider is not configured',
+  authentication_error: 'Reputation provider rejected the credentials',
+  rate_limited: 'Reputation provider rate limit exceeded',
+  provider_server_error: 'Reputation provider server error',
+  timeout: 'Reputation provider request timed out',
+  connection_error: 'Reputation provider is unreachable',
+  invalid_response: 'Reputation provider returned an invalid response',
+  unexpected_http_error: 'Unexpected reputation provider error',
+}
+
+function formatDateTime(value) {
+  if (!value) {
+    return 'N/A'
+  }
+
+  const date = new Date(value)
+
+  return Number.isNaN(date.getTime()) ? 'N/A' : date.toLocaleString()
+}
+
+function formatBoolean(value) {
+  if (value === null || value === undefined) {
+    return 'Unknown'
+  }
+
+  return value ? 'Yes' : 'No'
+}
+
 function App() {
   const [stats, setStats] = useState({
     total_traffic: 0,
@@ -91,6 +137,12 @@ function App() {
   const [trafficProtocolFilter, setTrafficProtocolFilter] = useState('ALL')
   const [statusFilter, setStatusFilter] = useState('ALL')
 
+  // IP reputation lookup
+  const [reputationIp, setReputationIp] = useState('')
+  const [reputationLoading, setReputationLoading] = useState(false)
+  const [reputationResult, setReputationResult] = useState(null)
+  const [reputationError, setReputationError] = useState(null)
+
   // WebSocket connection management
   const [wsStatus, setWsStatus] = useState('connecting')
   const socketRef = useRef(null)
@@ -115,9 +167,65 @@ function App() {
     }
   }, [])
 
-  // Fetch available network interfaces
-  const fetchInterfaces = useCallback(async (activeInterface) => {
+  // Look up IP reputation on demand
+  const lookupReputation = useCallback(async (event) => {
+    event.preventDefault()
+
+    const ipAddress = reputationIp.trim()
+
+    if (!ipAddress) {
+      setReputationResult(null)
+      setReputationError({
+        type: 'invalid',
+        message: 'Enter a public IPv4 or IPv6 address.',
+      })
+      return
+    }
+
+    setReputationLoading(true)
+    setReputationError(null)
+
     try {
+      const response = await api.get(
+        `/api/reputation/${encodeURIComponent(ipAddress)}`
+      )
+      setReputationResult(response.data)
+    } catch (error) {
+      setReputationResult(null)
+
+      const status = error.response?.status
+
+      if (status === 400) {
+        setReputationError({
+          type: 'invalid',
+          message: 'Enter a valid public IPv4 or IPv6 address.',
+        })
+      } else if (status === 503) {
+        setReputationError({
+          type: 'unavailable',
+          message: (
+            'IP reputation service is unavailable. '
+            + 'It may be disabled on the server.'
+          ),
+        })
+      } else if (status === 429) {
+        setReputationError({
+          type: 'rate-limit',
+          message: 'IP reputation lookup rate limit exceeded. Try again shortly.',
+        })
+      } else {
+        setReputationError({
+          type: 'api',
+          message: 'Unable to fetch IP reputation.',
+        })
+      }
+    } finally {
+      setReputationLoading(false)
+    }
+  }, [reputationIp])
+
+  // Fetch available network interfaces
+  const fetchInterfaces = useCallback(async (activeInterface) => {    try {
       setInterfacesLoading(true)
       setInterfacesError('')
 
@@ -1310,72 +1418,261 @@ function App() {
               </div>
             </div>
 
-            {/* Top Source IPs */}
-            <div id="ip-monitoring" className="scroll-mt-20 rounded-xl border border-gray-800 bg-[#111b2b] p-6 xl:col-span-2">
+            {/* IP Monitoring */}
+            <div id="ip-monitoring" className="scroll-mt-20 grid grid-cols-1 gap-6 xl:col-span-2 xl:grid-cols-3">
 
-              <h3 className="text-lg font-semibold text-white">
-                Top Source IP Addresses
-              </h3>
+              {/* Top Source IPs */}
+              <div className="rounded-xl border border-gray-800 bg-[#111b2b] p-6 xl:col-span-2">
 
-              <p className="mt-1 text-sm text-gray-500">
-                Traffic volume and suspicious traffic by source IP
-              </p>
+                <h3 className="text-lg font-semibold text-white">
+                  Top Source IP Addresses
+                </h3>
 
-              <div className="mt-6 h-80">
-                {topSourceIPs.length > 0 ? (
-                  <ResponsiveContainer width="100%" height="100%">
-                    <BarChart
-                      data={topSourceIPs}
-                      layout="vertical"
-                      margin={{ top: 5, right: 30, left: 20, bottom: 5 }}
-                    >
-                      <CartesianGrid
-                        strokeDasharray="3 3"
-                        stroke="#273449"
-                      />
+                <p className="mt-1 text-sm text-gray-500">
+                  Traffic volume and suspicious traffic by source IP
+                </p>
 
-                      <XAxis type="number" stroke="#9ca3af" />
+                <div className="mt-6 h-80">
+                  {topSourceIPs.length > 0 ? (
+                    <ResponsiveContainer width="100%" height="100%">
+                      <BarChart
+                        data={topSourceIPs}
+                        layout="vertical"
+                        margin={{ top: 5, right: 30, left: 20, bottom: 5 }}
+                      >
+                        <CartesianGrid
+                          strokeDasharray="3 3"
+                          stroke="#273449"
+                        />
 
-                      <YAxis
-                        type="category"
-                        dataKey="source_ip"
-                        width={120}
-                        stroke="#9ca3af"
-                      />
+                        <XAxis type="number" stroke="#9ca3af" />
 
-                      <Tooltip
-                        contentStyle={{
-                          backgroundColor: '#111b2b',
-                          border: '1px solid #374151',
-                          borderRadius: '8px',
-                          color: '#fff',
-                        }}
-                      />
+                        <YAxis
+                          type="category"
+                          dataKey="source_ip"
+                          width={120}
+                          stroke="#9ca3af"
+                        />
 
-                      <Legend />
+                        <Tooltip
+                          contentStyle={{
+                            backgroundColor: '#111b2b',
+                            border: '1px solid #374151',
+                            borderRadius: '8px',
+                            color: '#fff',
+                          }}
+                        />
 
-                      <Bar
-                        dataKey="total_traffic"
-                        name="Total Traffic"
-                        fill="#3b82f6"
-                        radius={[0, 5, 5, 0]}
-                      />
+                        <Legend />
 
-                      <Bar
-                        dataKey="suspicious_traffic"
-                        name="Suspicious Traffic"
-                        fill="#ef4444"
-                        radius={[0, 5, 5, 0]}
-                      />
+                        <Bar
+                          dataKey="total_traffic"
+                          name="Total Traffic"
+                          fill="#3b82f6"
+                          radius={[0, 5, 5, 0]}
+                        />
 
-                    </BarChart>
-                  </ResponsiveContainer>
-                ) : (
-                  <div className="flex h-full items-center justify-center text-sm text-gray-500">
-                    {loading ? 'Loading chart...' : 'No source IP data available'}
+                        <Bar
+                          dataKey="suspicious_traffic"
+                          name="Suspicious Traffic"
+                          fill="#ef4444"
+                          radius={[0, 5, 5, 0]}
+                        />
+
+                      </BarChart>
+                    </ResponsiveContainer>
+                  ) : (
+                    <div className="flex h-full items-center justify-center text-sm text-gray-500">
+                      {loading ? 'Loading chart...' : 'No source IP data available'}
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* IP Reputation Lookup */}
+              <div className="rounded-xl border border-gray-800 bg-[#111b2b] p-6">
+
+                <h3 className="text-lg font-semibold text-white">
+                  IP Reputation
+                </h3>
+
+                <p className="mt-1 text-sm text-gray-500">
+                  Check a public IP address against AbuseIPDB
+                </p>
+
+                <form
+                  onSubmit={lookupReputation}
+                  className="mt-5 flex flex-col gap-3 sm:flex-row xl:flex-col"
+                >
+                  <input
+                    type="text"
+                    value={reputationIp}
+                    onChange={(e) => setReputationIp(e.target.value)}
+                    placeholder="8.8.8.8 or 2606:4700::1111"
+                    className="w-full rounded-lg border border-gray-700 bg-[#0d1422] px-4 py-3 text-sm text-white outline-none placeholder:text-gray-500 focus:border-blue-500"
+                  />
+
+                  <button
+                    type="submit"
+                    disabled={reputationLoading}
+                    className="inline-flex items-center justify-center gap-2 rounded-lg bg-blue-600 px-4 py-3 text-sm font-medium text-white transition hover:bg-blue-500 disabled:cursor-not-allowed disabled:opacity-60"
+                  >
+                    <RefreshCw
+                      size={16}
+                      className={reputationLoading ? 'animate-spin' : ''}
+                    />
+                    {reputationLoading ? 'Checking...' : 'Check IP'}
+                  </button>
+                </form>
+
+                {reputationError && (
+                  <div
+                    className={`mt-4 rounded-lg border p-3 text-sm ${
+                      reputationError.type === 'invalid'
+                        || reputationError.type === 'api'
+                        ? 'border-red-500/30 bg-red-500/10 text-red-400'
+                        : 'border-yellow-500/30 bg-yellow-500/10 text-yellow-400'
+                    }`}
+                  >
+                    {reputationError.message}
+                  </div>
+                )}
+
+                {reputationResult && (
+                  <div className="mt-5 space-y-4">
+
+                    {reputationResult.provider_error && (
+                      <div className="rounded-lg border border-yellow-500/30 bg-yellow-500/10 p-3 text-sm text-yellow-400">
+                        {PROVIDER_ERROR_LABELS[reputationResult.provider_error]
+                          || 'Reputation provider error'}
+                      </div>
+                    )}
+
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span
+                        className={`rounded-lg border px-3 py-1 text-xs font-medium ${
+                          RISK_STYLES[reputationResult.risk_category]
+                            || RISK_STYLES.UNKNOWN
+                        }`}
+                      >
+                        {(reputationResult.risk_category || 'UNKNOWN')
+                          .replace('_', ' ')} RISK
+                      </span>
+
+                      <span className="rounded-lg border border-gray-700 bg-[#0d1422] px-3 py-1 text-xs text-gray-400">
+                        {REPUTATION_STATE_LABELS[reputationResult.state]
+                          || reputationResult.state}
+                      </span>
+                    </div>
+
+                    {reputationResult.reputation ? (
+                      <>
+                        <dl className="grid grid-cols-2 gap-3 text-sm">
+                          <div className="col-span-2">
+                            <dt className="text-gray-500">IP Address</dt>
+                            <dd className="mt-1 break-all font-medium text-white">
+                              {reputationResult.ip_address}
+                            </dd>
+                          </div>
+
+                          <div>
+                            <dt className="text-gray-500">Abuse Score</dt>
+                            <dd className="mt-1 font-medium text-white">
+                              {reputationResult.reputation.abuse_confidence_score
+                                ?? 'N/A'}
+                            </dd>
+                          </div>
+
+                          <div>
+                            <dt className="text-gray-500">Total Reports</dt>
+                            <dd className="mt-1 font-medium text-white">
+                              {reputationResult.reputation.total_reports ?? 'N/A'}
+                            </dd>
+                          </div>
+
+                          <div>
+                            <dt className="text-gray-500">Distinct Users</dt>
+                            <dd className="mt-1 font-medium text-white">
+                              {reputationResult.reputation.num_distinct_users
+                                ?? 'N/A'}
+                            </dd>
+                          </div>
+
+                          <div>
+                            <dt className="text-gray-500">Country</dt>
+                            <dd className="mt-1 font-medium text-white">
+                              {reputationResult.reputation.country_code || 'N/A'}
+                            </dd>
+                          </div>
+
+                          <div className="col-span-2">
+                            <dt className="text-gray-500">Last Reported</dt>
+                            <dd className="mt-1 font-medium text-white">
+                              {formatDateTime(
+                                reputationResult.reputation.last_reported_at
+                              )}
+                            </dd>
+                          </div>
+
+                          <div className="col-span-2">
+                            <dt className="text-gray-500">ISP</dt>
+                            <dd className="mt-1 break-words text-white">
+                              {reputationResult.reputation.isp || 'N/A'}
+                            </dd>
+                          </div>
+
+                          <div className="col-span-2">
+                            <dt className="text-gray-500">Domain</dt>
+                            <dd className="mt-1 break-words text-white">
+                              {reputationResult.reputation.domain || 'N/A'}
+                            </dd>
+                          </div>
+
+                          <div className="col-span-2">
+                            <dt className="text-gray-500">Usage Type</dt>
+                            <dd className="mt-1 break-words text-white">
+                              {reputationResult.reputation.usage_type || 'N/A'}
+                            </dd>
+                          </div>
+                        </dl>
+
+                        <div className="flex flex-wrap gap-2 text-xs text-gray-400">
+                          <span className="rounded-lg border border-gray-700 bg-[#0d1422] px-3 py-1">
+                            Public: {formatBoolean(
+                              reputationResult.reputation.is_public
+                            )}
+                          </span>
+                          <span className="rounded-lg border border-gray-700 bg-[#0d1422] px-3 py-1">
+                            Whitelisted: {formatBoolean(
+                              reputationResult.reputation.is_whitelisted
+                            )}
+                          </span>
+                          <span className="rounded-lg border border-gray-700 bg-[#0d1422] px-3 py-1">
+                            Tor: {formatBoolean(
+                              reputationResult.reputation.is_tor
+                            )}
+                          </span>
+                        </div>
+
+                        <p className="text-xs text-gray-500">
+                          Cache checked{' '}
+                          {formatDateTime(reputationResult.cache?.checked_at)}
+                          {reputationResult.cache?.expires_at
+                            ? ` · expires ${formatDateTime(
+                              reputationResult.cache.expires_at
+                            )}`
+                            : ''}
+                        </p>
+                      </>
+                    ) : (
+                      <p className="text-sm text-gray-500">
+                        No reputation data is available for this IP address.
+                      </p>
+                    )}
                   </div>
                 )}
               </div>
+
             </div>
 
           </div>

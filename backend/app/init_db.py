@@ -2,6 +2,7 @@ from app.core.database import Base, engine
 
 from app.models.traffic import Traffic
 from app.models.alert import Alert
+from app.models.reputation import IPReputationCache
 
 
 def initialize_database():

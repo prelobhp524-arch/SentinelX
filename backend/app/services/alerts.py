@@ -1,7 +1,33 @@
+import logging
+
 from sqlalchemy.orm import Session
 
 from app.models.alert import Alert
+from app.services.ip_reputation_runtime import ip_reputation_worker
+from app.services.ip_reputation_worker import (
+    ENQUEUE_FULL,
+    ENQUEUE_NOT_RUNNING,
+)
 from app.services.websocket_events import emit_event, serialize_alert
+
+
+logger = logging.getLogger(__name__)
+
+
+def enqueue_alert_source_ip(source_ip):
+    try:
+        status = ip_reputation_worker.enqueue(source_ip)
+    except Exception:
+        logger.warning(
+            "Failed to enqueue alert source IP for reputation check"
+        )
+        return
+
+    if status in (ENQUEUE_FULL, ENQUEUE_NOT_RUNNING):
+        logger.warning(
+            "IP reputation enqueue skipped for alert source IP: %s",
+            status
+        )
 
 
 def create_security_alert(db: Session, detection_result: dict):
@@ -66,5 +92,7 @@ def create_security_alert(db: Session, detection_result: dict):
         "alert.created",
         serialize_alert(alert)
     )
+
+    enqueue_alert_source_ip(alert.source_ip)
 
     return alert
