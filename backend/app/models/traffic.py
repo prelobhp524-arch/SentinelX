@@ -1,7 +1,8 @@
-from sqlalchemy import Column, Integer, String, DateTime
+from sqlalchemy import Column, Integer, String
 from sqlalchemy.sql import func
 
 from app.core.database import Base
+from app.core.types import UTCDateTime
 
 
 class Traffic(Base):
@@ -20,7 +21,7 @@ class Traffic(Base):
     packet_size = Column(Integer, nullable=False)
 
     timestamp = Column(
-        DateTime(timezone=True),
+        UTCDateTime,
         server_default=func.now(),
         nullable=False
     )

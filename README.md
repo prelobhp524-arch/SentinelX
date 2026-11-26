@@ -3,7 +3,8 @@
 SentinelX is a local network security monitoring dashboard that captures network
 traffic, detects suspicious activity, generates security alerts, and visualizes
 traffic analytics in real time. It combines a Scapy-based packet capture engine,
-a FastAPI backend, a SQLite database, and a responsive React dashboard.
+a FastAPI backend, a SQLite or PostgreSQL database, and a responsive React
+dashboard.
 
 The project is designed as a local educational and portfolio demonstration. It
 monitors and detects; it does **not** block, filter, or modify network traffic.
@@ -89,7 +90,7 @@ monitors and detects; it does **not** block, filter, or modify network traffic.
 | --- | --- |
 | Frontend | React, Vite, Tailwind CSS, Recharts, Axios, Lucide React |
 | Backend | Python, FastAPI, Uvicorn, Pydantic |
-| Database | SQLite, SQLAlchemy |
+| Database | SQLite (default), PostgreSQL, SQLAlchemy |
 | Packet Capture | Scapy |
 | Real-Time Updates | WebSocket (FastAPI/Starlette and browser WebSocket API) |
 | IP Reputation | AbuseIPDB REST API via `requests` |
@@ -116,9 +117,10 @@ FastAPI API + detection services
 React dashboard (Vite + Tailwind CSS)
 ```
 
-The frontend calls the backend at `http://127.0.0.1:8000`. CORS is configured for
-the local Vite development origins (`http://localhost:5173` and
-`http://127.0.0.1:5173`).
+The frontend calls the backend at `http://127.0.0.1:8000` by default. Set
+`VITE_API_BASE_URL` for non-local deployments. CORS defaults to the local Vite
+development origins (`http://localhost:5173` and `http://127.0.0.1:5173`) and
+can be overridden with `CORS_ALLOW_ORIGINS`.
 
 ---
 
@@ -237,8 +239,10 @@ From the `backend` directory, with the virtual environment active:
 python -m app.init_db
 ```
 
-This creates the SQLite tables using the configured `DATABASE_URL`. Run it again
-after adding new SQLAlchemy models or when the database file is missing a table.
+This creates the tables using the configured `DATABASE_URL`, or
+`DATABASE_URL_UNPOOLED` when that optional setting is present. Run it again
+after adding new SQLAlchemy models or when the database is missing a table.
+Schema creation is not performed automatically on application startup.
 
 ### 5. Start the Backend
 
@@ -289,7 +293,10 @@ are optional unless noted otherwise.
 | `PROJECT_VERSION` | `1.0.0` | Application version |
 | `DEBUG` | `False` | Debug flag |
 | `SQLALCHEMY_ECHO` | `False` | Log SQL statements when enabled |
-| `DATABASE_URL` | `sqlite:///./sentinelx.db` | Database connection URL |
+| `PUBLIC_DEMO_MODE` | `False` | Reject state-changing API requests and reputation lookups |
+| `CORS_ALLOW_ORIGINS` | local Vite origins | Comma-separated list of allowed browser origins |
+| `DATABASE_URL` | `sqlite:///./sentinelx.db` | Database connection URL; PostgreSQL is supported |
+| `DATABASE_URL_UNPOOLED` | empty | Optional direct PostgreSQL URL used only by `app.init_db` |
 | `IP_REPUTATION_ENABLED` | `False` | Enables IP reputation lookups and the background worker |
 | `ABUSEIPDB_API_KEY` | empty | AbuseIPDB API key; required for provider lookups |
 | `IP_REPUTATION_CACHE_TTL_HOURS` | `24` | Reputation cache lifetime in hours |
@@ -304,6 +311,8 @@ Example `backend/.env`:
 ```dotenv
 DEBUG=False
 SQLALCHEMY_ECHO=False
+PUBLIC_DEMO_MODE=False
+CORS_ALLOW_ORIGINS=http://localhost:5173,http://127.0.0.1:5173
 DATABASE_URL=sqlite:///./sentinelx.db
 
 IP_REPUTATION_ENABLED=false
@@ -318,6 +327,30 @@ IP_REPUTATION_RATE_LIMIT_PROVIDER_CALLS=30
 
 Use a relative SQLite path only when starting the backend from the `backend`
 directory, so the database resolves to `backend/sentinelx.db`.
+
+For PostgreSQL, set `DATABASE_URL` to the application connection string. For
+Neon, use the pooled connection string for the application and optionally set
+`DATABASE_URL_UNPOOLED` to the direct connection string for `app.init_db`.
+Standard `postgres://` and `postgresql://` URLs are normalized to the psycopg 3
+driver. Keep `sslmode=require` in the URL when your provider requires TLS.
+
+### Frontend Environment Variables
+
+Vite exposes only variables prefixed with `VITE_`. Configure these at build time
+in the frontend host or in a local `.env` file.
+
+| Variable | Default | Description |
+| --- | --- | --- |
+| `VITE_API_BASE_URL` | `http://127.0.0.1:8000` | Backend HTTP base URL |
+| `VITE_WS_URL` | Derived from `VITE_API_BASE_URL` | Optional explicit WebSocket URL |
+
+When `VITE_WS_URL` is omitted, the dashboard derives `/ws` from the API base URL
+and uses `wss://` automatically for HTTPS deployments. Do not put backend
+secrets or API keys in frontend environment variables.
+
+For a public demonstration deployment, set `PUBLIC_DEMO_MODE=True` on the
+backend. This keeps GET endpoints available for the dashboard while rejecting
+writes, capture start/stop, alert updates, and IP reputation lookups.
 
 ---
 
@@ -443,13 +476,18 @@ and the production build are the available frontend verification steps.
   rules.
 - **Windows-focused packet capture.** Interface discovery uses Windows-specific
   Scapy APIs. Live capture requires Npcap and typically Administrator
-  privileges.
+  privileges. Non-Windows deployments report capture as unsupported instead of
+  failing requests.
 - **Heuristic detection.** Port scan and traffic spike thresholds are simple
   rules and can produce false positives or miss slow or low-volume attacks.
 - **No authentication or authorization.** The API is designed to run on a local
-  machine. Do not expose it to untrusted networks.
-- **SQLite storage.** The application uses a single local SQLite database and is
-  not designed for high concurrency or multi-user deployments.
+  machine. `PUBLIC_DEMO_MODE` provides read-only public demonstrations but is not
+  a substitute for authentication. Do not expose write-capable instances to
+  untrusted networks.
+- **Database concurrency.** SQLite is the default local database and is not
+  designed for high concurrency or multi-user deployments. PostgreSQL is
+  supported, but SentinelX does not tune connection pool sizes or include a
+  migration system.
 - **Manual schema initialization.** Tables are created by `python -m app.init_db`.
   There is no automatic migration system; run the initializer after model
   changes.

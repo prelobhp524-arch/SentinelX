@@ -4,6 +4,8 @@ import logging
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
+from fastapi.responses import JSONResponse
+from starlette.middleware.base import BaseHTTPMiddleware
 
 from app.api.traffic import router as traffic_router
 from app.api.alerts import router as alerts_router
@@ -40,19 +42,39 @@ async def lifespan(app: FastAPI):
             websocket_manager.clear_loop()
 
 
+PUBLIC_DEMO_SAFE_METHODS = frozenset({"GET", "HEAD", "OPTIONS"})
+
+
+class PublicDemoModeMiddleware(BaseHTTPMiddleware):
+    async def dispatch(self, request, call_next):
+        if (
+            settings.PUBLIC_DEMO_MODE
+            and request.method not in PUBLIC_DEMO_SAFE_METHODS
+        ):
+            return JSONResponse(
+                status_code=403,
+                content={
+                    "detail": (
+                        "This deployment is read-only. "
+                        "State-changing requests are disabled in public "
+                        "demo mode."
+                    )
+                }
+            )
+
+        return await call_next(request)
+
+
 app = FastAPI(
     title=settings.PROJECT_NAME,
     description="Real-Time Network Intrusion Detection and Prevention System",
     version=settings.PROJECT_VERSION,
     lifespan=lifespan
 )
-# Enable CORS for React frontend
+app.add_middleware(PublicDemoModeMiddleware)
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[
-        "http://localhost:5173",
-        "http://127.0.0.1:5173",
-    ],
+    allow_origins=settings.cors_allow_origins_list,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

@@ -13,7 +13,7 @@ from app.services.ip_validation import canonicalize_public_ip
 from app.services.abuseipdb_client import (
     ABUSEIPDB_CHECK_URL,
     MAX_PROVIDER_RESPONSE_BYTES,
-    SQLITE_MAX_INTEGER,
+    MAX_SIGNED_BIGINT,
     AuthenticationError,
     InvalidProviderResponse,
     MissingAPIKeyError,
@@ -867,7 +867,7 @@ def test_integer_overflow_report_counts_are_rejected(
 ):
     http["response"] = FakeResponse(
         payload=provider_payload(
-            **{field: SQLITE_MAX_INTEGER + 1}
+            **{field: MAX_SIGNED_BIGINT + 1}
         )
     )
 
@@ -882,7 +882,7 @@ def test_integer_overflow_report_counts_are_rejected(
         ("numDistinctUsers", "num_distinct_users"),
     ]
 )
-@pytest.mark.parametrize("value", [0, SQLITE_MAX_INTEGER])
+@pytest.mark.parametrize("value", [0, MAX_SIGNED_BIGINT])
 def test_valid_report_count_boundaries_are_accepted(
     enabled,
     http,

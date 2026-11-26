@@ -62,6 +62,12 @@ def get_ip_reputation(
     db: Session = Depends(get_db),
     _rate_limit: None = Depends(enforce_reputation_rate_limit)
 ):
+    if settings.PUBLIC_DEMO_MODE:
+        raise HTTPException(
+            status_code=403,
+            detail="IP reputation lookups are disabled in public demo mode"
+        )
+
     try:
         canonical_ip = canonicalize_public_ip(ip_address)
     except ValueError:

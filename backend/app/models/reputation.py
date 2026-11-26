@@ -1,7 +1,8 @@
-from sqlalchemy import Boolean, Column, DateTime, Integer, String
+from sqlalchemy import BigInteger, Boolean, Column, Integer, String
 from sqlalchemy.sql import func
 
 from app.core.database import Base
+from app.core.types import UTCDateTime
 
 
 class IPReputationCache(Base):
@@ -19,10 +20,10 @@ class IPReputationCache(Base):
     )
 
     abuse_confidence_score = Column(Integer, nullable=True)
-    total_reports = Column(Integer, nullable=True)
-    num_distinct_users = Column(Integer, nullable=True)
+    total_reports = Column(BigInteger, nullable=True)
+    num_distinct_users = Column(BigInteger, nullable=True)
 
-    last_reported_at = Column(DateTime(timezone=True), nullable=True)
+    last_reported_at = Column(UTCDateTime, nullable=True)
 
     isp = Column(String(255), nullable=True)
     domain = Column(String(255), nullable=True)
@@ -34,13 +35,13 @@ class IPReputationCache(Base):
     is_tor = Column(Boolean, nullable=True)
 
     checked_at = Column(
-        DateTime(timezone=True),
+        UTCDateTime,
         server_default=func.now(),
         nullable=False
     )
 
     expires_at = Column(
-        DateTime(timezone=True),
+        UTCDateTime,
         nullable=False,
         index=True
     )

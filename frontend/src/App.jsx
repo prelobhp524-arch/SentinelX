@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import api from './services/api'
+import api, { WS_URL } from './services/api'
 
 import {
   ResponsiveContainer,
@@ -104,7 +104,9 @@ function App() {
     // Packet capture state
   const [captureStatus, setCaptureStatus] = useState({
     status: 'stopped',
-    interface: 'Wi-Fi',
+    supported: true,
+    reason: null,
+    interface: null,
     local_ip: null,
     packets_captured: 0,
     last_error: null,
@@ -213,6 +215,11 @@ function App() {
           type: 'rate-limit',
           message: 'IP reputation lookup rate limit exceeded. Try again shortly.',
         })
+      } else if (status === 403) {
+        setReputationError({
+          type: 'unavailable',
+          message: 'IP reputation lookups are disabled in public demo mode.',
+        })
       } else {
         setReputationError({
           type: 'api',
@@ -292,7 +299,10 @@ function App() {
   useEffect(() => {
     const initializeCapture = async () => {
       const status = await fetchCaptureStatus()
-      await fetchInterfaces(status?.interface)
+
+      if (status?.supported !== false) {
+        await fetchInterfaces(status?.interface)
+      }
     }
 
     initializeCapture()
@@ -615,7 +625,7 @@ function App() {
         reconnectTimerRef.current = null
       }
 
-      const socket = new WebSocket('ws://127.0.0.1:8000/ws')
+      const socket = new WebSocket(WS_URL)
       socketRef.current = socket
 
       socket.onopen = () => {
@@ -1152,7 +1162,8 @@ function App() {
                 </p>
               </div>
 
-              <div className="flex flex-wrap items-center gap-3">
+              {captureStatus.supported !== false && (
+                <div className="flex flex-wrap items-center gap-3">
 
                 <div className="mr-3">
                   <label
@@ -1245,9 +1256,16 @@ function App() {
                   <RefreshCw size={17} />
                 </button>
 
-              </div>
+                </div>
+              )}
 
             </div>
+
+            {captureStatus.supported === false && (
+              <div className="mt-4 rounded-lg border border-amber-500/30 bg-amber-500/10 p-3 text-sm text-amber-300">
+                {captureStatus.reason || 'Packet capture is not supported in this deployment.'}
+              </div>
+            )}
 
             {captureError && (
               <div className="mt-4 rounded-lg border border-red-500/30 bg-red-500/10 p-3 text-sm text-red-400">

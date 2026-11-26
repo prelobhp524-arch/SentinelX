@@ -1,3 +1,4 @@
+import sys
 import threading
 import time
 
@@ -14,6 +15,10 @@ from app.services.websocket_events import emit_event, serialize_traffic
 
 # Network interface
 CAPTURE_INTERFACE = "Wi-Fi"
+CAPTURE_SUPPORTED = sys.platform == "win32"
+CAPTURE_UNSUPPORTED_MESSAGE = (
+    "Packet capture is only supported on Windows hosts with Npcap installed."
+)
 
 # Port scan detection configuration
 PORT_SCAN_THRESHOLD = 10
@@ -27,7 +32,11 @@ _scan_lock = threading.Lock()
 _packets_captured = 0
 _last_error = None
 _local_ip = None
-_capture_interface = CAPTURE_INTERFACE
+_capture_interface = CAPTURE_INTERFACE if CAPTURE_SUPPORTED else None
+
+
+class CaptureUnsupportedError(RuntimeError):
+    pass
 
 # Store incoming TCP SYN requests by source IP
 _scan_attempts = defaultdict(deque)
@@ -41,6 +50,9 @@ def get_available_interfaces():
     Return available network interfaces with
     their friendly names and descriptions.
     """
+
+    if not CAPTURE_SUPPORTED:
+        return []
 
     from scapy.arch.windows import get_windows_if_list
 
@@ -257,6 +269,9 @@ def start_capture(interface=None):
 
     global _sniffer, _local_ip, _capture_interface
 
+    if not CAPTURE_SUPPORTED:
+        raise CaptureUnsupportedError(CAPTURE_UNSUPPORTED_MESSAGE)
+
     selected_interface = interface or CAPTURE_INTERFACE
 
     with _capture_lock:
@@ -359,9 +374,16 @@ def get_capture_status():
         and _sniffer.running
     )
 
+    if not CAPTURE_SUPPORTED:
+        status = "unsupported"
+    else:
+        status = "running" if running else "stopped"
+
     return {
-        "status": "running" if running else "stopped",
-        "interface": _capture_interface,
+        "status": status,
+        "supported": CAPTURE_SUPPORTED,
+        "reason": None if CAPTURE_SUPPORTED else CAPTURE_UNSUPPORTED_MESSAGE,
+        "interface": _capture_interface if CAPTURE_SUPPORTED else None,
         "local_ip": _local_ip,
         "packets_captured": _packets_captured,
         "last_error": _last_error

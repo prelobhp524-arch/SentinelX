@@ -11,7 +11,7 @@ from app.core.config import settings
 from app.core.database import Base
 from app.models.reputation import IPReputationCache
 from app.services.reputation_cache import (
-    SQLITE_MAX_INTEGER,
+    MAX_SIGNED_BIGINT,
     get_cached_reputation,
     get_cached_reputation_status,
     is_cache_fresh,
@@ -178,7 +178,7 @@ def test_non_public_ip_rejected_on_upsert(db):
 )
 @pytest.mark.parametrize(
     "value",
-    [True, False, -1, SQLITE_MAX_INTEGER + 1]
+    [True, False, -1, MAX_SIGNED_BIGINT + 1]
 )
 def test_invalid_persisted_integers_are_rejected_before_insert(
     db,
@@ -218,9 +218,9 @@ def test_abuse_confidence_score_above_provider_range_is_rejected(db):
         ("abuse_confidence_score", 0),
         ("abuse_confidence_score", 100),
         ("total_reports", 0),
-        ("total_reports", SQLITE_MAX_INTEGER),
+        ("total_reports", MAX_SIGNED_BIGINT),
         ("num_distinct_users", 0),
-        ("num_distinct_users", SQLITE_MAX_INTEGER),
+        ("num_distinct_users", MAX_SIGNED_BIGINT),
     ]
 )
 def test_valid_persisted_integer_boundaries_are_accepted(

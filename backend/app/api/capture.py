@@ -1,6 +1,9 @@
 from fastapi import APIRouter, HTTPException
 
 from app.services.packet_capture import (
+    CAPTURE_SUPPORTED,
+    CAPTURE_UNSUPPORTED_MESSAGE,
+    CaptureUnsupportedError,
     start_capture,
     stop_capture,
     get_capture_status,
@@ -21,6 +24,12 @@ def start_packet_capture(payload: dict | None = None):
 
     try:
         return start_capture(interface)
+
+    except CaptureUnsupportedError as error:
+        raise HTTPException(
+            status_code=503,
+            detail=str(error)
+        )
 
     except ValueError as error:
         raise HTTPException(
@@ -58,5 +67,7 @@ def packet_capture_status():
 def available_interfaces():
 
     return {
-        "interfaces": get_available_interfaces()
+        "interfaces": get_available_interfaces(),
+        "supported": CAPTURE_SUPPORTED,
+        "reason": None if CAPTURE_SUPPORTED else CAPTURE_UNSUPPORTED_MESSAGE
     }

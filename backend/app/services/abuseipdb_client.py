@@ -15,7 +15,7 @@ PROVIDER_NAME = "AbuseIPDB"
 
 MAX_PROVIDER_RESPONSE_BYTES = 1024 * 1024
 RESPONSE_READ_CHUNK_SIZE = 64 * 1024
-SQLITE_MAX_INTEGER = 2**63 - 1
+MAX_SIGNED_BIGINT = 2**63 - 1
 
 MAX_ISP_LENGTH = 255
 MAX_DOMAIN_LENGTH = 255
@@ -159,7 +159,7 @@ def _required_non_negative_int(data, field):
     if not isinstance(value, int) or isinstance(value, bool):
         raise InvalidProviderResponse()
 
-    if not 0 <= value <= SQLITE_MAX_INTEGER:
+    if not 0 <= value <= MAX_SIGNED_BIGINT:
         raise InvalidProviderResponse()
 
     return value

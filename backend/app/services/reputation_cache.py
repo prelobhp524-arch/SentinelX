@@ -20,12 +20,12 @@ NORMALIZED_FIELDS = (
     "is_tor",
 )
 
-SQLITE_MAX_INTEGER = 2**63 - 1
+MAX_SIGNED_BIGINT = 2**63 - 1
 
 PERSISTED_INTEGER_BOUNDS = {
     "abuse_confidence_score": (0, 100),
-    "total_reports": (0, SQLITE_MAX_INTEGER),
-    "num_distinct_users": (0, SQLITE_MAX_INTEGER),
+    "total_reports": (0, MAX_SIGNED_BIGINT),
+    "num_distinct_users": (0, MAX_SIGNED_BIGINT),
 }
 
 

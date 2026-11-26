@@ -7,7 +7,18 @@ class Settings(BaseSettings):
     PROJECT_VERSION: str = "1.0.0"
     DEBUG: bool = False
     SQLALCHEMY_ECHO: bool = False
-    DATABASE_URL: str = "sqlite:///./sentinelx.db"
+    PUBLIC_DEMO_MODE: bool = False
+    CORS_ALLOW_ORIGINS: str = (
+        "http://localhost:5173,http://127.0.0.1:5173"
+    )
+    DATABASE_URL: str = Field(
+        default="sqlite:///./sentinelx.db",
+        repr=False
+    )
+    DATABASE_URL_UNPOOLED: str | None = Field(
+        default=None,
+        repr=False
+    )
 
     IP_REPUTATION_ENABLED: bool = False
     ABUSEIPDB_API_KEY: str | None = Field(default=None, repr=False)
@@ -36,6 +47,14 @@ class Settings(BaseSettings):
         env_file_encoding="utf-8",
         extra="ignore"
     )
+
+    @property
+    def cors_allow_origins_list(self) -> list[str]:
+        return [
+            origin.strip()
+            for origin in self.CORS_ALLOW_ORIGINS.split(",")
+            if origin.strip()
+        ]
 
 
 settings = Settings()
