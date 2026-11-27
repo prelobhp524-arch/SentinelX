@@ -7,6 +7,7 @@ from app.core.database import (
 from app.models.traffic import Traffic
 from app.models.alert import Alert
 from app.models.reputation import IPReputationCache
+from app.models.demo_seed import DemoSeedRun
 
 
 def initialize_database():

@@ -25,6 +25,7 @@ monitors and detects; it does **not** block, filter, or modify network traffic.
 - [AbuseIPDB Configuration](#abuseipdb-configuration)
 - [Running the Application](#running-the-application)
 - [Generating Demo Traffic](#generating-demo-traffic)
+- [Seeding Simulated Dashboard Data](#seeding-simulated-dashboard-data)
 - [Testing](#testing)
 - [Limitations](#limitations)
 
@@ -135,6 +136,7 @@ SentinelX/
 │   │   ├── models/       # SQLAlchemy models
 │   │   ├── services/     # Capture, detection, alerts, reputation, WebSocket
 │   │   ├── init_db.py    # Database initialization
+│   │   ├── seed_demo.py  # Explicit simulated demo data seeder
 │   │   └── main.py       # FastAPI application entry point
 │   ├── tests/            # Backend test suite
 │   ├── requirements.txt
@@ -420,6 +422,73 @@ python simulate_traffic.py
 
 The simulator uses private source addresses for demonstration and sends traffic
 to `http://127.0.0.1:8000/api/traffic/`. It does not require live packet capture.
+
+### Seeding Simulated Dashboard Data
+
+`simulate_traffic.py` posts through the public API and is intended for local
+interactive use. To populate an empty dashboard with a consistent, recent
+dataset, use the explicit seeding command instead. It inserts simulated network
+traffic and security alerts directly through the existing SQLAlchemy models and
+never runs automatically during application startup.
+
+All seeded alerts are prefixed with `[SIMULATED]`. The seed command also writes
+a row to the `demo_seed_runs` table. That marker makes the command idempotent:
+running it again is a no-op, and existing real records are never deleted or
+updated. No API endpoint is exposed for seeding.
+
+#### Seed the Local SQLite Database
+
+From the `backend` directory with the virtual environment active:
+
+```powershell
+python -m app.init_db
+python -m app.seed_demo
+```
+
+Expected output includes the number of traffic and alert records inserted. A
+second run reports that simulated demo data is already present and inserts
+nothing.
+
+#### Seed the Neon PostgreSQL Database
+
+Use the same explicit command with the production connection strings in the
+process environment. The command prefers `DATABASE_URL_UNPOOLED` when set, then
+falls back to `DATABASE_URL`, matching `app.init_db`.
+
+The safest option is the Render Shell for the backend service, where the
+environment variables are already configured:
+
+```powershell
+python -m app.init_db
+python -m app.seed_demo --yes
+```
+
+`--yes` is required for any non-SQLite target. It is an explicit production
+safety check so a local command cannot silently seed PostgreSQL by accident.
+
+To run it from a local terminal, set the values for the current process only.
+Do not put them in source files or commit them:
+
+```powershell
+cd backend
+.\venv\Scripts\Activate.ps1
+$env:DATABASE_URL = Read-Host "Neon pooled DATABASE_URL"
+$env:DATABASE_URL_UNPOOLED = Read-Host "Neon direct DATABASE_URL_UNPOOLED"
+python -m app.init_db
+python -m app.seed_demo --yes
+Remove-Item Env:DATABASE_URL
+Remove-Item Env:DATABASE_URL_UNPOOLED
+```
+
+`DATABASE_URL_UNPOOLED` is optional. If it is not set, the command uses
+`DATABASE_URL`. The seed command creates missing tables, including the
+`demo_seed_runs` marker table, but does not alter existing tables. It does not
+change `PUBLIC_DEMO_MODE` and does not require disabling read-only demo mode.
+
+If the Neon database already contains a seed marker, the command exits without
+inserting duplicates. To intentionally replace demo data, remove the simulated
+rows and the corresponding `demo_seed_runs` marker manually, or use a new seed
+key in code. Real records should not be removed.
 
 ---
 
