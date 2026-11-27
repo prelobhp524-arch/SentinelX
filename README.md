@@ -345,6 +345,7 @@ in the frontend host or in a local `.env` file.
 | --- | --- | --- |
 | `VITE_API_BASE_URL` | `http://127.0.0.1:8000` | Backend HTTP base URL |
 | `VITE_WS_URL` | Derived from `VITE_API_BASE_URL` | Optional explicit WebSocket URL |
+| `VITE_PUBLIC_DEMO_MODE` | `false` | Hide write controls and show a read-only indicator; set to `true` for public demo builds |
 
 When `VITE_WS_URL` is omitted, the dashboard derives `/ws` from the API base URL
 and uses `wss://` automatically for HTTPS deployments. Do not put backend
@@ -353,6 +354,14 @@ secrets or API keys in frontend environment variables.
 For a public demonstration deployment, set `PUBLIC_DEMO_MODE=True` on the
 backend. This keeps GET endpoints available for the dashboard while rejecting
 writes, capture start/stop, alert updates, and IP reputation lookups.
+
+Also set `VITE_PUBLIC_DEMO_MODE=true` when building the frontend so the
+dashboard hides Acknowledge, Resolve, packet capture start/stop, and IP
+reputation lookup controls and displays a "Public Demo · Read Only" indicator.
+The frontend flag only controls presentation; the backend `PUBLIC_DEMO_MODE`
+remains the security boundary. Keep both values aligned. On Render, add
+`VITE_PUBLIC_DEMO_MODE` as an environment variable on the Static Site service
+and redeploy, because Vite reads it at build time.
 
 ---
 

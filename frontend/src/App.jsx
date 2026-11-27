@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import api, { WS_URL } from './services/api'
+import { PUBLIC_DEMO_MODE } from './config'
 
 import {
   ResponsiveContainer,
@@ -31,6 +32,7 @@ import {
   Play,
   Square,
   RefreshCw,
+  Lock,
 } from 'lucide-react'
 
 const SEVERITY_COLORS = {
@@ -1088,6 +1090,13 @@ function App() {
             </div>
 
             <div className="flex flex-wrap items-center gap-3">
+              {PUBLIC_DEMO_MODE && (
+                <div className="inline-flex items-center gap-2 rounded-lg border border-blue-500/30 bg-blue-500/10 px-4 py-2 text-sm text-blue-300">
+                  <Lock size={14} />
+                  Public Demo · Read Only
+                </div>
+              )}
+
               <div
                 className={`rounded-lg border px-4 py-2 text-sm ${
                   wsStatus === 'connected'
@@ -1165,13 +1174,14 @@ function App() {
               {captureStatus.supported !== false && (
                 <div className="flex flex-wrap items-center gap-3">
 
-                <div className="mr-3">
-                  <label
-                    htmlFor="capture-interface"
-                    className="text-xs text-gray-500"
-                  >
-                    Network Interface
-                  </label>
+                {!PUBLIC_DEMO_MODE && (
+                  <div className="mr-3">
+                    <label
+                      htmlFor="capture-interface"
+                      className="text-xs text-gray-500"
+                    >
+                      Network Interface
+                    </label>
 
                   <select
                     id="capture-interface"
@@ -1209,7 +1219,8 @@ function App() {
                       )?.description || ''}
                     </p>
                   )}
-                </div>
+                  </div>
+                )}
 
                 <div className="mr-3">
                   <p className="text-xs text-gray-500">
@@ -1221,31 +1232,35 @@ function App() {
                   </p>
                 </div>
 
-                <button
-                  onClick={() => handleCaptureAction('start')}
-                  disabled={
-                    captureLoading ||
-                    captureStatus.status === 'running'
-                  }
-                  className="flex items-center gap-2 rounded-lg bg-green-600 px-4 py-3 text-sm font-semibold text-white transition hover:bg-green-500 disabled:cursor-not-allowed disabled:opacity-40"
-                >
-                  <Play size={17} />
+                {!PUBLIC_DEMO_MODE && (
+                  <button
+                    onClick={() => handleCaptureAction('start')}
+                    disabled={
+                      captureLoading ||
+                      captureStatus.status === 'running'
+                    }
+                    className="flex items-center gap-2 rounded-lg bg-green-600 px-4 py-3 text-sm font-semibold text-white transition hover:bg-green-500 disabled:cursor-not-allowed disabled:opacity-40"
+                  >
+                    <Play size={17} />
 
-                  {captureLoading ? 'Please wait...' : 'Start Capture'}
-                </button>
+                    {captureLoading ? 'Please wait...' : 'Start Capture'}
+                  </button>
+                )}
 
-                <button
-                  onClick={() => handleCaptureAction('stop')}
-                  disabled={
-                    captureLoading ||
-                    captureStatus.status !== 'running'
-                  }
-                  className="flex items-center gap-2 rounded-lg bg-red-600 px-4 py-3 text-sm font-semibold text-white transition hover:bg-red-500 disabled:cursor-not-allowed disabled:opacity-40"
-                >
-                  <Square size={17} />
+                {!PUBLIC_DEMO_MODE && (
+                  <button
+                    onClick={() => handleCaptureAction('stop')}
+                    disabled={
+                      captureLoading ||
+                      captureStatus.status !== 'running'
+                    }
+                    className="flex items-center gap-2 rounded-lg bg-red-600 px-4 py-3 text-sm font-semibold text-white transition hover:bg-red-500 disabled:cursor-not-allowed disabled:opacity-40"
+                  >
+                    <Square size={17} />
 
-                  Stop Capture
-                </button>
+                    Stop Capture
+                  </button>
+                )}
 
                 <button
                   onClick={fetchCaptureStatus}
@@ -1518,30 +1533,36 @@ function App() {
                   Check a public IP address against AbuseIPDB
                 </p>
 
-                <form
-                  onSubmit={lookupReputation}
-                  className="mt-5 flex flex-col gap-3 sm:flex-row xl:flex-col"
-                >
-                  <input
-                    type="text"
-                    value={reputationIp}
-                    onChange={(e) => setReputationIp(e.target.value)}
-                    placeholder="8.8.8.8 or 2606:4700::1111"
-                    className="w-full rounded-lg border border-gray-700 bg-[#0d1422] px-4 py-3 text-sm text-white outline-none placeholder:text-gray-500 focus:border-blue-500"
-                  />
-
-                  <button
-                    type="submit"
-                    disabled={reputationLoading}
-                    className="inline-flex items-center justify-center gap-2 rounded-lg bg-blue-600 px-4 py-3 text-sm font-medium text-white transition hover:bg-blue-500 disabled:cursor-not-allowed disabled:opacity-60"
+                {PUBLIC_DEMO_MODE ? (
+                  <div className="mt-5 rounded-lg border border-gray-700 bg-[#0d1422] p-3 text-sm text-gray-400">
+                    IP reputation lookups are disabled in public demo mode.
+                  </div>
+                ) : (
+                  <form
+                    onSubmit={lookupReputation}
+                    className="mt-5 flex flex-col gap-3 sm:flex-row xl:flex-col"
                   >
-                    <RefreshCw
-                      size={16}
-                      className={reputationLoading ? 'animate-spin' : ''}
+                    <input
+                      type="text"
+                      value={reputationIp}
+                      onChange={(e) => setReputationIp(e.target.value)}
+                      placeholder="8.8.8.8 or 2606:4700::1111"
+                      className="w-full rounded-lg border border-gray-700 bg-[#0d1422] px-4 py-3 text-sm text-white outline-none placeholder:text-gray-500 focus:border-blue-500"
                     />
-                    {reputationLoading ? 'Checking...' : 'Check IP'}
-                  </button>
-                </form>
+
+                    <button
+                      type="submit"
+                      disabled={reputationLoading}
+                      className="inline-flex items-center justify-center gap-2 rounded-lg bg-blue-600 px-4 py-3 text-sm font-medium text-white transition hover:bg-blue-500 disabled:cursor-not-allowed disabled:opacity-60"
+                    >
+                      <RefreshCw
+                        size={16}
+                        className={reputationLoading ? 'animate-spin' : ''}
+                      />
+                      {reputationLoading ? 'Checking...' : 'Check IP'}
+                    </button>
+                  </form>
+                )}
 
                 {reputationError && (
                   <div
@@ -1859,7 +1880,9 @@ function App() {
                   </h3>
 
                   <p className="mt-1 text-sm text-gray-500">
-                    Review, acknowledge, and resolve detected security threats
+                    {PUBLIC_DEMO_MODE
+                      ? 'Review detected security threats in read-only mode'
+                      : 'Review, acknowledge, and resolve detected security threats'}
                   </p>
                 </div>
 
@@ -1956,7 +1979,9 @@ function App() {
                     <th className="px-6 py-4">Severity</th>
                     <th className="px-6 py-4">Status</th>
                     <th className="px-6 py-4">Timestamp</th>
-                    <th className="px-6 py-4">Actions</th>
+                    {!PUBLIC_DEMO_MODE && (
+                      <th className="px-6 py-4">Actions</th>
+                    )}
                   </tr>
                 </thead>
 
@@ -2020,9 +2045,10 @@ function App() {
                       </td>
 
                       {/* Actions */}
-                      <td className="px-6 py-4">
+                      {!PUBLIC_DEMO_MODE && (
+                        <td className="px-6 py-4">
 
-                        <div className="flex items-center gap-2">
+                          <div className="flex items-center gap-2">
 
                           {alert.status === 'NEW' && (
                             <button
@@ -2058,9 +2084,10 @@ function App() {
                             </span>
                           )}
 
-                        </div>
+                          </div>
 
-                      </td>
+                        </td>
+                      )}
 
                     </tr>
 
@@ -2069,7 +2096,7 @@ function App() {
                   {filteredAlerts.length === 0 && (
                     <tr>
                       <td
-                        colSpan="7"
+                        colSpan={PUBLIC_DEMO_MODE ? 6 : 7}
                         className="px-6 py-8 text-center text-gray-500"
                       >
                         No alerts match your search or selected filters.
